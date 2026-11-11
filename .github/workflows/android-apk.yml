@@ -1,0 +1,65 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android-apk.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        working-directory: mobile
+        run: |
+          cp pubspec.yaml /tmp/finhell_pubspec.yaml
+          cp analysis_options.yaml /tmp/finhell_analysis.yaml
+          cp README.md /tmp/finhell_readme.md
+          cp -R lib /tmp/finhell_lib
+          flutter create . --platforms=android --org ru.finhell --project-name finhell
+          cp /tmp/finhell_pubspec.yaml pubspec.yaml
+          cp /tmp/finhell_analysis.yaml analysis_options.yaml
+          cp /tmp/finhell_readme.md README.md
+          rm -rf lib
+          cp -R /tmp/finhell_lib lib
+          rm -f test/widget_test.dart
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: mobile
+        run: flutter analyze --no-fatal-infos || true
+
+      - name: Build release APK
+        working-directory: mobile
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: finhell-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30

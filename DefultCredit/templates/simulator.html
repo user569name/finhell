@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ФинХелл — экономический симулятор</title>
+<style>
+:root {
+  --bg: #07101d;
+  --bg2: #0a1626;
+  --panel: rgba(14, 27, 45, 0.92);
+  --panel-2: #122238;
+  --line: #1e3550;
+  --line-soft: rgba(94, 140, 190, 0.18);
+  --text: #e9f1fb;
+  --muted: #8fa6bf;
+  --muted-2: #68809a;
+  --accent: #37d39b;
+  --accent-2: #5aa9ff;
+  --accent-3: #b98cff;
+  --warn: #ffb454;
+  --danger: #ff6b6b;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  --radius: 20px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(900px 600px at 8% -10%, rgba(55, 211, 155, 0.13), transparent 60%),
+    radial-gradient(900px 700px at 100% 0%, rgba(90, 169, 255, 0.12), transparent 55%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg2) 55%, #060d17 100%);
+  font-family: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.7), transparent 80%);
+}
+a { color: var(--accent-2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.topbar {
+  position: relative;
+  z-index: 2;
+  max-width: 1540px;
+  margin: 0 auto;
+  padding: 22px 28px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark {
+  width: 44px; height: 44px; border-radius: 14px;
+  display: grid; place-items: center;
+  font-weight: 800; font-size: 22px; color: #04130d;
+  background: linear-gradient(135deg, var(--accent), #8ef0c8);
+  box-shadow: 0 10px 30px rgba(55, 211, 155, 0.35);
+}
+.brand strong { display: block; font-size: 17px; letter-spacing: 0.2px; }
+.brand span { display: block; color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+.topnav { display: flex; gap: 8px; flex-wrap: wrap; }
+.topnav a {
+  color: var(--muted); font-size: 13px; padding: 8px 12px;
+  border: 1px solid transparent; border-radius: 999px;
+}
+.topnav a:hover { color: var(--text); border-color: var(--line); text-decoration: none; background: rgba(255,255,255,0.03); }
+main { position: relative; z-index: 1; max-width: 1540px; margin: 0 auto; padding: 0 28px 40px; }
+.hero {
+  display: flex; justify-content: space-between; gap: 30px; align-items: flex-end;
+  padding: 56px 0 34px;
+}
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--accent); font-size: 12px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.eyebrow::before { content: ""; width: 26px; height: 1px; background: var(--accent); }
+.hero h1 {
+  margin: 14px 0 14px;
+  font-size: clamp(34px, 5vw, 62px);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  max-width: 780px;
+}
+.hero h1 span {
+  background: linear-gradient(100deg, var(--accent) 0%, var(--accent-2) 55%, var(--accent-3) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero p { max-width: 660px; color: var(--muted); font-size: 16px; margin: 0; }
+.hero-badges { display: flex; flex-direction: column; gap: 10px; min-width: 230px; }
+.hero-badge {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; border: 1px solid var(--line-soft);
+  border-radius: 14px; background: rgba(255,255,255,0.025);
+  color: var(--muted); font-size: 13px;
+}
+.hero-badge b { color: var(--text); font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+.layout {
+  display: grid;
+  grid-template-columns: 440px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+.form-panel { padding: 24px; position: sticky; top: 18px; }
+.form-head h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.02em; }
+.form-head p { margin: 0 0 22px; color: var(--muted); font-size: 13px; }
+.section { padding: 20px 0; border-top: 1px solid var(--line-soft); }
+.section:first-of-type { border-top: 0; padding-top: 0; }
+.section-title {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0 0 14px; font-size: 13px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.section-title .num {
+  width: 22px; height: 22px; border-radius: 7px;
+  display: grid; place-items: center; font-size: 11px;
+  color: var(--accent); background: rgba(55, 211, 155, 0.10);
+  border: 1px solid rgba(55, 211, 155, 0.25);
+}
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.field:last-child { margin-bottom: 0; }
+.field > span, .field label > span { font-size: 12px; color: var(--muted); }
+.field small { color: var(--muted-2); font-size: 11px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+input[type="number"], input[type="text"], select {
+  width: 100%; padding: 11px 12px;
+  color: var(--text); background: rgba(7, 16, 29, 0.75);
+  border: 1px solid var(--line); border-radius: 11px;
+  font-size: 14px; font-family: inherit; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input[type="number"]:focus, input[type="text"]:focus, select:focus {
+  border-color: rgba(55, 211, 155, 0.65);
+  box-shadow: 0 0 0 3px rgba(55, 211, 155, 0.10);
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
+.quick-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.quick {
+  padding: 5px 9px; border-radius: 8px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted); font-size: 11px; cursor: pointer;
+  font-family: inherit;
+}
+.quick:hover, .quick.active { color: var(--accent); border-color: rgba(55,211,155,0.5); background: rgba(55,211,155,0.08); }
+.profile-grid { display: grid; gap: 8px; margin-bottom: 14px; }
+.profile-card {
+  position: relative; display: flex; gap: 11px; align-items: flex-start;
+  padding: 12px 13px; border: 1px solid var(--line); border-radius: 13px;
+  cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.profile-card:hover { border-color: rgba(90, 169, 255, 0.45); }
+.profile-card input { position: absolute; opacity: 0; pointer-events: none; }
+.profile-card .radio {
+  width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto; margin-top: 2px;
+  border: 1px solid var(--muted-2); position: relative;
+}
+.profile-card input:checked + .radio { border-color: var(--accent); }
+.profile-card input:checked + .radio::after {
+  content: ""; position: absolute; inset: 3px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 10px var(--accent);
+}
+.profile-card input:checked ~ .profile-text strong { color: var(--accent); }
+.profile-card:has(input:checked) { border-color: rgba(55,211,155,0.55); background: rgba(55,211,155,0.06); }
+.profile-text strong { display: block; font-size: 13px; margin-bottom: 2px; }
+.profile-text span { display: block; color: var(--muted); font-size: 11px; line-height: 1.35; }
+details {
+  border: 1px solid var(--line-soft); border-radius: 12px;
+  padding: 0 12px; margin-top: 10px; background: rgba(255,255,255,0.015);
+}
+details[open] { padding-bottom: 12px; }
+summary {
+  cursor: pointer; padding: 11px 0; font-size: 12px; color: var(--muted);
+  list-style: none; display: flex; align-items: center; justify-content: space-between;
+}
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--accent); font-size: 16px; }
+details[open] summary::after { content: "−"; }
+.risk-row { margin: 10px 0; }
+.risk-row .risk-head { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+.risk-row output { color: var(--accent); font-variant-numeric: tabular-nums; }
+input[type="range"] {
+  width: 100%; height: 4px; appearance: none; -webkit-appearance: none;
+  background: linear-gradient(90deg, var(--accent) var(--fill, 50%), #20364f var(--fill, 50%));
+  border-radius: 99px; outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none; -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--accent); border: 2px solid #07101d;
+  box-shadow: 0 0 0 3px rgba(55,211,155,0.16); cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%; background: var(--accent);
+  border: 2px solid #07101d; cursor: pointer;
+}
+.return-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.return-grid label { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.return-grid input { padding: 8px 9px; font-size: 12px; }
+.check-row { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+.check-row input { accent-color: var(--accent); }
+.debt-row { display: grid; grid-template-columns: 1.2fr 1fr 0.7fr 0.9fr 28px; gap: 6px; margin-bottom: 7px; align-items: center; }
+.debt-row input { padding: 8px 8px; font-size: 11px; }
+.icon-btn {
+  width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted); cursor: pointer; font-size: 16px;
+}
+.icon-btn:hover { color: var(--danger); border-color: rgba(255,107,107,0.5); }
+.ghost-btn {
+  width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px dashed var(--line);
+  background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.ghost-btn:hover { color: var(--accent); border-color: rgba(55,211,155,0.5); }
+.primary {
+  width: 100%; margin-top: 20px; padding: 14px 18px;
+  border: 0; border-radius: 13px; cursor: pointer;
+  color: #04130d; font-weight: 800; font-size: 14px; letter-spacing: 0.02em;
+  background: linear-gradient(135deg, var(--accent), #8ef0c8);
+  box-shadow: 0 14px 34px rgba(55,211,155,0.25);
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  font-family: inherit;
+}
+.primary:hover { transform: translateY(-1px); box-shadow: 0 18px 40px rgba(55,211,155,0.32); }
+.primary:disabled { opacity: 0.6; cursor: wait; transform: none; }
+.micro { color: var(--muted-2); font-size: 11px; margin: 12px 0 0; text-align: center; }
+
+/* ---------- Результаты ---------- */
+.results { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.empty-state {
+  padding: 64px 40px; text-align: center; min-height: 520px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.empty-icon {
+  width: 66px; height: 66px; border-radius: 20px; display: grid; place-items: center;
+  font-size: 30px; color: var(--accent); margin-bottom: 18px;
+  background: rgba(55, 211, 155, 0.08); border: 1px solid rgba(55, 211, 155, 0.22);
+  box-shadow: 0 0 50px rgba(55, 211, 155, 0.12);
+}
+.empty-state h2 { margin: 0 0 8px; font-size: 24px; }
+.empty-state p { max-width: 460px; color: var(--muted); margin: 0 0 22px; }
+.empty-hints { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
+.empty-hints span, .pill {
+  padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--muted); font-size: 11px; background: rgba(255,255,255,0.02);
+}
+.result-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.result-head h2 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+.result-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.kpi {
+  padding: 17px 18px; border-radius: 16px; border: 1px solid var(--line-soft);
+  background: linear-gradient(160deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012));
+}
+.kpi.accent { border-color: rgba(55,211,155,0.35); background: linear-gradient(160deg, rgba(55,211,155,0.13), rgba(55,211,155,0.02)); }
+.kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 7px; }
+.kpi-value { font-size: clamp(21px, 2.3vw, 31px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi-sub { color: var(--muted); font-size: 11px; margin-top: 6px; }
+.positive { color: var(--accent) !important; }
+.negative { color: var(--danger) !important; }
+.warn-text { color: var(--warn) !important; }
+.card { padding: 20px; border-radius: var(--radius); }
+.card h3 { margin: 0 0 4px; font-size: 16px; }
+.card .card-sub { color: var(--muted); font-size: 12px; margin: 0 0 16px; }
+.chart-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.chart-wrap { position: relative; width: 100%; height: 330px; margin-top: 6px; }
+.chart-wrap canvas { width: 100%; height: 100%; display: block; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 3px; }
+.alloc-list { display: flex; flex-direction: column; gap: 12px; }
+.alloc-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) 140px; gap: 12px; align-items: center; }
+.alloc-name { font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+.alloc-name small { color: var(--muted-2); font-size: 10px; }
+.alloc-bar { height: 8px; border-radius: 99px; background: #162a41; overflow: hidden; }
+.alloc-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.alloc-value { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+.alloc-value small { display: block; color: var(--muted-2); font-size: 10px; }
+.sequence { display: flex; flex-direction: column; gap: 0; }
+.stage { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 13px; position: relative; padding-bottom: 20px; }
+.stage:last-child { padding-bottom: 0; }
+.stage::before { content: ""; position: absolute; left: 18px; top: 38px; bottom: 0; width: 1px; background: var(--line); }
+.stage:last-child::before { display: none; }
+.stage-num {
+  width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+  color: var(--accent); background: rgba(55,211,155,0.08);
+  border: 1px solid rgba(55,211,155,0.28); font-weight: 800; font-size: 13px;
+}
+.stage-body { padding-top: 2px; }
+.stage-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.stage-period { color: var(--accent-2); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.stage-title { font-size: 15px; font-weight: 700; }
+.stage-desc { color: var(--muted); font-size: 12px; margin: 5px 0 0; }
+.stage-reason { color: var(--muted-2); font-size: 11px; margin: 4px 0 0; font-style: italic; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px;
+  border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.02);
+  font-size: 10px; color: var(--muted);
+}
+.chip b { color: var(--text); font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px; border-bottom: 1px solid var(--line-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+tr.recommended td { background: rgba(55,211,155,0.055); }
+tr.recommended td:first-child { border-left: 2px solid var(--accent); }
+.warning-list { display: flex; flex-direction: column; gap: 7px; }
+.warning {
+  display: flex; gap: 9px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid rgba(255,180,84,0.22); background: rgba(255,180,84,0.055);
+  color: #f4d2a0; font-size: 11px;
+}
+.warning::before { content: "!"; color: var(--warn); font-weight: 800; }
+.debt-box { display: flex; flex-direction: column; gap: 8px; }
+.debt-item { display: flex; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 10px; font-size: 11px; color: var(--muted); }
+.debt-item b { color: var(--text); }
+.disclaimer { color: var(--muted-2); font-size: 10px; line-height: 1.5; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+.error-box {
+  padding: 14px 16px; border-radius: 12px; border: 1px solid rgba(255,107,107,0.35);
+  background: rgba(255,107,107,0.08); color: #ffc4c4; font-size: 12px;
+}
+.loading {
+  display: inline-block; width: 14px; height: 14px; margin-right: 8px;
+  border: 2px solid rgba(4,19,13,0.25); border-top-color: #04130d;
+  border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: -2px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Облигации ---------- */
+.bond-panel { margin-top: 24px; padding: 26px; }
+.bond-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-end; margin-bottom: 18px; }
+.bond-head h2 { margin: 8px 0 4px; font-size: 26px; letter-spacing: -0.02em; }
+.bond-head p { margin: 0; color: var(--muted); font-size: 13px; }
+.bond-form { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)) auto; gap: 10px; align-items: end; }
+.bond-form .field { margin: 0; }
+.bond-form .primary { width: auto; margin: 0; padding: 11px 16px; white-space: nowrap; }
+.bond-result { margin-top: 18px; }
+.bond-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.bond-kpi { padding: 14px 15px; border-radius: 13px; border: 1px solid var(--line-soft); background: rgba(255,255,255,0.025); }
+.bond-kpi span { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+.bond-kpi b { font-size: 21px; letter-spacing: -0.02em; }
+.bond-note { color: var(--muted-2); font-size: 10px; margin-top: 10px; }
+.footer {
+  position: relative; z-index: 1; max-width: 1540px; margin: 0 auto;
+  padding: 24px 28px 34px; display: flex; justify-content: space-between; gap: 12px;
+  color: var(--muted-2); font-size: 11px; flex-wrap: wrap;
+}
+
+@media (max-width: 1180px) {
+  .layout { grid-template-columns: 1fr; }
+  .form-panel { position: static; }
+  .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bond-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bond-form .primary { grid-column: span 3; }
+}
+@media (max-width: 760px) {
+  main, .topbar { padding-left: 16px; padding-right: 16px; }
+  .hero { padding-top: 36px; flex-direction: column; align-items: flex-start; }
+  .hero-badges { flex-direction: row; flex-wrap: wrap; min-width: 0; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .alloc-row { grid-template-columns: 1fr; gap: 5px; }
+  .alloc-value { text-align: left; }
+  .bond-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bond-form .primary { grid-column: span 2; }
+  .bond-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .debt-row { grid-template-columns: 1fr 1fr; }
+  .debt-row .icon-btn { justify-self: end; }
+  .topnav { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">₽</div>
+    <div>
+      <strong>ФинХелл</strong>
+      <span>экономический симулятор</span>
+    </div>
+  </div>
+  <nav class="topnav">
+    <a href="#simulator">Симулятор</a>
+    <a href="#bond">Облигации</a>
+    <a href="/optimizer">Оптимизатор капитала</a>
+    <a href="/docs" target="_blank" rel="noopener">API / Swagger</a>
+  </nav>
+</header>
+<main>
+  <section class="hero">
+    <div>
+      <div class="eyebrow">Планирование капитала</div>
+      <h1>Деньги должны<br><span>работать по порядку.</span></h1>
+      <p>
+        Введите сумму, ежемесячный взнос, срок и факторы риска — симулятор
+        соберёт портфель и покажет последовательность: резерв, погашение
+        дорогих долгов, облигации, акции и защита капитала перед целью.
+      </p>
+    </div>
+    <div class="hero-badges">
+      <div class="hero-badge"><span class="dot"></span><b>Монте-Карло</b> · 800 сценариев</div>
+      <div class="hero-badge"><span class="dot" style="background:var(--accent-2);box-shadow:0 0 12px var(--accent-2)"></span><b>ОФЗ и корпоративные облигации</b></div>
+      <div class="hero-badge"><span class="dot" style="background:var(--accent-3);box-shadow:0 0 12px var(--accent-3)"></span><b>6 факторов риска</b> для активов</div>
+    </div>
+  </section>
+  <div class="layout" id="simulator">
+    <section class="panel form-panel">
+      <div class="form-head">
+        <h2>Ваш финансовый план</h2>
+        <p>Заполните параметры — расчёт займёт пару секунд.</p>
+      </div>
+      <form id="sim-form">
+        <div class="section">
+          <h3 class="section-title"><span class="num">1</span> Деньги и срок</h3>
+          <div class="field">
+            <label for="initial_capital"><span>Сколько денег есть сейчас, ₽</span></label>
+            <input id="initial_capital" name="initial_capital" type="number" min="0" step="1000" value="1000000">
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label for="monthly_contribution"><span>Взнос в месяц, ₽</span></label>
+              <input id="monthly_contribution" name="monthly_contribution" type="number" min="0" step="1000" value="30000">
+            </div>
+            <div class="field">
+              <label for="monthly_expenses"><span>Расходы в месяц, ₽</span></label>
+              <input id="monthly_expenses" name="monthly_expenses" type="number" min="0" step="1000" value="50000">
+            </div>
+          </div>
+          <div class="field">
+            <label for="horizon_months"><span>Срок, месяцев</span></label>
+            <input id="horizon_months" name="horizon_months" type="number" min="1" max="600" step="1" value="60">
+            <div class="quick-row" id="horizon-quick">
+              <button type="button" class="quick" data-months="12">1 год</button>
+              <button type="button" class="quick" data-months="36">3 года</button>
+              <button type="button" class="quick active" data-months="60">5 лет</button>
+              <button type="button" class="quick" data-months="120">10 лет</button>
+              <button type="button" class="quick" data-months="240">20 лет</button>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label for="goal_amount"><span>Цель, ₽ (необязательно)</span></label>
+              <input id="goal_amount" name="goal_amount" type="number" min="0" step="10000" placeholder="Например, 3 000 000">
+            </div>
+            <div class="field">
+              <label for="emergency_fund_months"><span>Резерв, мес. расходов</span></label>
+              <input id="emergency_fund_months" name="emergency_fund_months" type="number" min="0" max="36" step="1" value="6">
+            </div>
+          </div>
+        </div>
+        <div class="section">
+          <h3 class="section-title"><span class="num">2</span> Риск и инфляция</h3>
+          <div class="profile-grid" id="profile-grid">
+            <label class="profile-card">
+              <input type="radio" name="risk_profile" value="conservative">
+              <span class="radio"></span>
+              <span class="profile-text"><strong>Консервативный</strong><span>Сохранить капитал, минимум акций</span></span>
+            </label>
+            <label class="profile-card">
+              <input type="radio" name="risk_profile" value="balanced" checked>
+              <span class="radio"></span>
+              <span class="profile-text"><strong>Сбалансированный</strong><span>Облигации + акции, умеренные просадки</span></span>
+            </label>
+            <label class="profile-card">
+              <input type="radio" name="risk_profile" value="aggressive">
+              <span class="radio"></span>
+              <span class="profile-text"><strong>Агрессивный</strong><span>Максимум роста, глубокие просадки</span></span>
+            </label>
+          </div>
+          <div class="field">
+            <label for="inflation_rate"><span>Инфляция, % в год</span></label>
+            <input id="inflation_rate" name="inflation_rate" type="number" min="0" max="100" step="0.5" value="8">
+          </div>
+          <details>
+            <summary>Факторы риска для активов</summary>
+            <div id="risk-factors">
+              <div class="risk-row" data-risk="market">
+                <div class="risk-head"><span>Рыночный риск</span><output>50%</output></div>
+                <input type="range" min="0" max="100" step="1" value="50">
+              </div>
+              <div class="risk-row" data-risk="credit">
+                <div class="risk-head"><span>Кредитный риск</span><output>30%</output></div>
+                <input type="range" min="0" max="100" step="1" value="30">
+              </div>
+              <div class="risk-row" data-risk="rate">
+                <div class="risk-head"><span>Процентный риск</span><output>40%</output></div>
+                <input type="range" min="0" max="100" step="1" value="40">
+              </div>
+              <div class="risk-row" data-risk="liquidity">
+                <div class="risk-head"><span>Риск ликвидности</span><output>20%</output></div>
+                <input type="range" min="0" max="100" step="1" value="20">
+              </div>
+              <div class="risk-row" data-risk="currency">
+                <div class="risk-head"><span>Валютный риск</span><output>30%</output></div>
+                <input type="range" min="0" max="100" step="1" value="30">
+              </div>
+              <div class="risk-row" data-risk="inflation">
+                <div class="risk-head"><span>Инфляционный риск</span><output>50%</output></div>
+                <input type="range" min="0" max="100" step="1" value="50">
+              </div>
+            </div>
+          </details>
+          <details>
+            <summary>Свои доходности активов</summary>
+            <label class="check-row"><input type="checkbox" id="use_custom_returns"> Использовать свои допущения</label>
+            <div class="return-grid" id="return-grid"></div>
+          </details>
+        </div>
+        <div class="section">
+          <h3 class="section-title"><span class="num">3</span> Долги</h3>
+          <div id="debt-list"></div>
+          <button type="button" class="ghost-btn" id="add-debt">+ Добавить долг</button>
+        </div>
+        <button class="primary" type="submit" id="submit-btn">Рассчитать план</button>
+        <p class="micro">Расчёт модели, а не индивидуальная инвестиционная рекомендация.</p>
+      </form>
+    </section>
+    <section class="results" id="results">
+      <div class="empty-state panel">
+        <div class="empty-icon">↗</div>
+        <h2>Здесь появится ваш план</h2>
+        <p>Стартовый капитал, взнос, срок и риск — и симулятор покажет структуру портфеля, последовательность шагов и диапазон результата.</p>
+        <div class="empty-hints">
+          <span>p10 / p50 / p90</span>
+          <span>вероятность цели</span>
+          <span>лестница облигаций</span>
+          <span>просадки</span>
+        </div>
+      </div>
+    </section>
+  </div>
+  <section class="panel bond-panel" id="bond">
+    <div class="bond-head">
+      <div>
+        <div class="eyebrow">Отдельный инструмент</div>
+        <h2>Калькулятор облигаций</h2>
+        <p>Текущая доходность, YTM, дюрация и купонный доход — для ОФЗ или корпоративной бумаги.</p>
+      </div>
+    </div>
+    <form id="bond-form" class="bond-form">
+      <div class="field"><label for="bond_face"><span>Номинал, ₽</span></label><input id="bond_face" type="number" min="100" step="100" value="1000"></div>
+      <div class="field"><label for="bond_price"><span>Цена покупки, ₽</span></label><input id="bond_price" type="number" min="1" step="1" value="950"></div>
+      <div class="field"><label for="bond_coupon"><span>Купон, % годовых</span></label><input id="bond_coupon" type="number" min="0" step="0.1" value="12"></div>
+      <div class="field"><label for="bond_freq"><span>Купонов в год</span></label><input id="bond_freq" type="number" min="1" max="12" step="1" value="2"></div>
+      <div class="field"><label for="bond_years"><span>Лет до погашения</span></label><input id="bond_years" type="number" min="0.5" step="0.5" value="5"></div>
+      <div class="field"><label for="bond_reinvest"><span>Реинвестирование, %</span></label><input id="bond_reinvest" type="number" min="-50" step="0.1" value="12"></div>
+      <button class="primary" type="submit">Рассчитать облигацию</button>
+    </form>
+    <div id="bond-result" class="bond-result"></div>
+  </section>
+</main>
+<footer class="footer">
+  <span>ФинХелл · учебный финансовый симулятор</span>
+  <span>FastAPI · Pydantic · Монте-Карло</span>
+</footer>
+<script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Оптимизатор капитала ФинХелл: три уровня риска, 10 000 сценариев Монте-Карло, стресс-тесты и AI-объяснения.">
+  <title>Оптимизатор капитала — ФинХелл</title>
+  <link rel="stylesheet" href="/static/optimizer.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <a class="brand" href="/optimizer" aria-label="ФинХелл — оптимизатор капитала">
+      <span class="brand-mark">Ф</span>
+      <span>ФинХелл</span>
+      <span class="brand-sub">Оптимизатор капитала</span>
+    </a>
+    <nav class="topnav" aria-label="Навигация">
+      <a class="nav-link" href="/">Симулятор v1</a>
+      <a class="nav-link" href="/docs" target="_blank" rel="noopener">API</a>
+      <button class="icon-btn" id="themeToggle" type="button" aria-label="Переключить тему" title="Светлая / тёмная тема">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path>
+        </svg>
+      </button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span> Данные ЦБ РФ и MOEX ISS</div>
+        <h1>Оптимизатор<br>капитала</h1>
+        <p>Сравните вклады, ОФЗ, корпоративные и муниципальные облигации, недвижимость и ипотеку. Три уровня риска, 10 000 сценариев Монте-Карло и честный диапазон исходов вместо одной «красивой» цифры.</p>
+        <div class="hero-chips">
+          <span class="hero-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16"></path><path d="M8 15l3-4 3 2 5-7"></path></svg>
+            10 000 путей на сценарий
+          </span>
+          <span class="hero-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"></path><path d="M9 12l2 2 4-4"></path></svg>
+            Стресс-тесты ставки и инфляции
+          </span>
+          <span class="hero-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a7 7 0 0 1 7 7c0 3-2 5-3 7H8c-1-2-3-4-3-7a7 7 0 0 1 7-7z"></path><path d="M9 21h6M9 17h6"></path></svg>
+            AI-объяснение без выдуманных цифр
+          </span>
+        </div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="hero-panel">
+          <div class="hero-panel-label">Монте-Карло</div>
+          <div class="hero-panel-value">10 000</div>
+          <div class="hero-panel-sub">траекторий капитала в каждом сценарии</div>
+          <div class="hero-bars"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="layout">
+      <aside class="form-card card" id="formCard">
+        <div class="card-head">
+          <div>
+            <h2>Ваши параметры</h2>
+            <p>Макроданные подставятся автоматически. Любое значение можно переопределить.</p>
+          </div>
+          <span class="badge green">шаг 1</span>
+        </div>
+
+        <form id="optimizerForm" novalidate>
+          <div class="form-section">
+            <div class="form-section-title"><span class="dot"></span> Капитал и цель</div>
+            <div class="field">
+              <label for="capital">Текущий капитал</label>
+              <div class="input-wrap">
+                <input id="capital" type="number" min="0" step="1000" value="500000" inputmode="numeric" required>
+                <span class="suffix">₽</span>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="monthly">Ежемесячный взнос</label>
+                <div class="input-wrap">
+                  <input id="monthly" type="number" min="0" step="1000" value="20000" inputmode="numeric">
+                  <span class="suffix">₽</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="horizon_months">Горизонт</label>
+                <select id="horizon_months">
+                  <option value="12">1 год</option>
+                  <option value="24">2 года</option>
+                  <option value="36">3 года</option>
+                  <option value="60" selected>5 лет</option>
+                  <option value="84">7 лет</option>
+                  <option value="120">10 лет</option>
+                  <option value="180">15 лет</option>
+                  <option value="240">20 лет</option>
+                </select>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="goal_amount">Цель по капиталу</label>
+                <div class="input-wrap">
+                  <input id="goal_amount" type="number" min="0" step="10000" value="1500000" placeholder="Необязательно" inputmode="numeric">
+                  <span class="suffix">₽</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="region">Регион</label>
+                <input id="region" type="text" value="Москва" maxlength="120">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title"><span class="dot"></span> Риск и ликвидность</div>
+            <div class="field">
+              <label>Ваш риск-профиль</label>
+              <div class="segmented" id="riskSegmented" role="group" aria-label="Риск-профиль">
+                <button type="button" data-value="conservative" data-tone="low">Консервативный</button>
+                <button type="button" data-value="moderate" data-tone="medium" class="active">Умеренный</button>
+                <button type="button" data-value="aggressive" data-tone="high">Агрессивный</button>
+              </div>
+              <input type="hidden" id="risk_tolerance" value="moderate">
+            </div>
+            <div class="field">
+              <label>Потребность в ликвидности</label>
+              <div class="segmented" id="liquiditySegmented" role="group" aria-label="Ликвидность">
+                <button type="button" data-value="high" data-tone="low">Высокая</button>
+                <button type="button" data-value="medium" data-tone="medium" class="active">Средняя</button>
+                <button type="button" data-value="low" data-tone="high">Низкая</button>
+              </div>
+              <input type="hidden" id="liquidity_need" value="medium">
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="monthly_expenses">Расходы в месяц</label>
+                <div class="input-wrap">
+                  <input id="monthly_expenses" type="number" min="0" step="1000" value="50000" inputmode="numeric">
+                  <span class="suffix">₽</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="emergency_fund_months">Резерв, месяцев</label>
+                <input id="emergency_fund_months" type="number" min="0" max="36" step="1" value="6" inputmode="numeric">
+              </div>
+            </div>
+          </div>
+
+          <details class="advanced" id="creditDetails">
+            <summary>Кредит, ипотека и налоговые льготы</summary>
+            <div class="details-body">
+              <label class="check">
+                <input type="checkbox" id="credit_willingness">
+                <span>Готов использовать кредитное плечо
+                  <small>Ипотечные сценарии появятся только при включённом флаге.</small>
+                </span>
+              </label>
+              <div class="field">
+                <label for="credit_type">Тип кредита</label>
+                <select id="credit_type">
+                  <option value="none">Без кредита</option>
+                  <option value="consumer">Потребительский кредит</option>
+                  <option value="mortgage">Ипотека</option>
+                </select>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="mortgage_balance">Остаток ипотеки</label>
+                  <div class="input-wrap">
+                    <input id="mortgage_balance" type="number" min="0" step="10000" placeholder="0" inputmode="numeric">
+                    <span class="suffix">₽</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="mortgage_rate">Ставка ипотеки</label>
+                  <div class="input-wrap">
+                    <input id="mortgage_rate" type="number" min="0" max="100" step="0.1" placeholder="20,0" inputmode="decimal">
+                    <span class="suffix">%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="mortgage_payment">Платёж в месяц</label>
+                  <div class="input-wrap">
+                    <input id="mortgage_payment" type="number" min="0" step="1000" placeholder="0" inputmode="numeric">
+                    <span class="suffix">₽</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="mortgage_remaining_months">Осталось месяцев</label>
+                  <input id="mortgage_remaining_months" type="number" min="0" max="600" step="1" placeholder="0" inputmode="numeric">
+                </div>
+              </div>
+              <div class="field">
+                <label for="mortgage_property_value">Стоимость залога</label>
+                <div class="input-wrap">
+                  <input id="mortgage_property_value" type="number" min="0" step="10000" placeholder="0" inputmode="numeric">
+                  <span class="suffix">₽</span>
+                </div>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="iis_type">ИИС</label>
+                  <select id="iis_type">
+                    <option value="none">Не использую</option>
+                    <option value="A">Тип A — вычет на взносы</option>
+                    <option value="B">Тип B — освобождение дохода</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="iis_contribution">Взнос на ИИС в год</label>
+                  <div class="input-wrap">
+                    <input id="iis_contribution" type="number" min="0" step="10000" placeholder="0" inputmode="numeric">
+                    <span class="suffix">₽</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="deposit_amount">Существующий вклад</label>
+                  <div class="input-wrap">
+                    <input id="deposit_amount" type="number" min="0" step="10000" placeholder="0" inputmode="numeric">
+                    <span class="suffix">₽</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="deposit_rate">Ставка вклада</label>
+                  <div class="input-wrap">
+                    <input id="deposit_rate" type="number" min="0" max="100" step="0.1" placeholder="15,0" inputmode="decimal">
+                    <span class="suffix">%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details class="advanced" id="macroDetails">
+            <summary>Макропараметры и ручные данные</summary>
+            <div class="details-body">
+              <p class="hint" style="margin-bottom:10px">Пустое поле — использовать данные ЦБ / MOEX или демо-срез. Значения в процентах годовых.</p>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ov_key_rate">Ключевая ставка</label>
+                  <div class="input-wrap"><input id="ov_key_rate" type="number" min="0" max="100" step="0.1" placeholder="16,0" inputmode="decimal"><span class="suffix">%</span></div>
+                </div>
+                <div class="field">
+                  <label for="ov_inflation_expected">Ожидаемая инфляция</label>
+                  <div class="input-wrap"><input id="ov_inflation_expected" type="number" min="-50" max="100" step="0.1" placeholder="6,0" inputmode="decimal"><span class="suffix">%</span></div>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ov_deposit_rate">Ставка по вкладам</label>
+                  <div class="input-wrap"><input id="ov_deposit_rate" type="number" min="0" max="100" step="0.1" placeholder="15,0" inputmode="decimal"><span class="suffix">%</span></div>
+                </div>
+                <div class="field">
+                  <label for="ov_mortgage_rate">Ставка ипотеки</label>
+                  <div class="input-wrap"><input id="ov_mortgage_rate" type="number" min="0" max="100" step="0.1" placeholder="20,0" inputmode="decimal"><span class="suffix">%</span></div>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ov_ofz_yield_10y">ОФЗ 10 лет</label>
+                  <div class="input-wrap"><input id="ov_ofz_yield_10y" type="number" min="0" max="100" step="0.1" placeholder="13,5" inputmode="decimal"><span class="suffix">%</span></div>
+                </div>
+                <div class="field">
+                  <label for="ov_corporate_yield">Корпоративные облигации</label>
+                  <div class="input-wrap"><input id="ov_corporate_yield" type="number" min="0" max="100" step="0.1" placeholder="16,5" inputmode="decimal"><span class="suffix">%</span></div>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="ov_real_estate_growth">Рост цен на недвижимость</label>
+                  <div class="input-wrap"><input id="ov_real_estate_growth" type="number" min="-50" max="100" step="0.1" placeholder="8,0" inputmode="decimal"><span class="suffix">%</span></div>
+                </div>
+                <div class="field">
+                  <label for="ov_rent_yield">Доходность аренды</label>
+                  <div class="input-wrap"><input id="ov_rent_yield" type="number" min="0" max="100" step="0.1" placeholder="5,0" inputmode="decimal"><span class="suffix">%</span></div>
+                </div>
+              </div>
+              <button type="button" class="secondary-btn" id="resetMacroBtn" style="width:100%;margin-top:2px">Сбросить ручные значения</button>
+            </div>
+          </details>
+
+          <details class="advanced" id="optionsDetails">
+            <summary>Параметры расчёта</summary>
+            <div class="details-body">
+              <div class="field-row">
+                <div class="field">
+                  <label for="paths">Путей на сценарий</label>
+                  <select id="paths">
+                    <option value="1000">1 000 — быстро</option>
+                    <option value="5000">5 000 — сбалансированно</option>
+                    <option value="10000" selected>10 000 — точно</option>
+                    <option value="20000">20 000 — максимум</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="distribution">Распределение</label>
+                  <select id="distribution">
+                    <option value="normal" selected>Нормальное</option>
+                    <option value="student_t">Стьюдента (тяжёлые хвосты)</option>
+                    <option value="historical">Историческое</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="max_scenarios">Сценариев</label>
+                  <select id="max_scenarios">
+                    <option value="10">10</option>
+                    <option value="12">12</option>
+                    <option value="15">15</option>
+                    <option value="18" selected>18</option>
+                    <option value="24">24</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="seed">Зерно генератора</label>
+                  <input id="seed" type="number" min="0" max="2147483647" step="1" value="42" inputmode="numeric">
+                </div>
+              </div>
+              <label class="check">
+                <input type="checkbox" id="refresh_macro">
+                <span>Обновить макроданные сейчас
+                  <small>Запрос к ЦБ РФ и MOEX ISS. Если API недоступны — останется демо-срез.</small>
+                </span>
+              </label>
+              <label class="check">
+                <input type="checkbox" id="include_real_estate" checked>
+                <span>Включать недвижимость</span>
+              </label>
+              <label class="check">
+                <input type="checkbox" id="include_mortgage" checked>
+                <span>Включать ипотечные сценарии</span>
+              </label>
+              <label class="check">
+                <input type="checkbox" id="run_stress_tests" checked>
+                <span>Считать стресс-тесты</span>
+              </label>
+            </div>
+          </details>
+
+          <button class="primary-btn" id="submitBtn" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+            <span>Рассчитать план</span>
+          </button>
+          <p class="micro">Расчёт займёт 10–60 секунд. Это не индивидуальная инвестиционная рекомендация.</p>
+        </form>
+      </aside>
+
+      <section class="results" id="results" aria-live="polite">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-inner">
+            <div class="empty-orb">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 19V5M4 19h16"></path>
+                <path d="M7 15l3.5-4.5 3 2.5L19 7"></path>
+                <path d="M15.5 7H19v3.5"></path>
+              </svg>
+            </div>
+            <h2>Соберём ваш план</h2>
+            <p>Заполните капитал, взнос и горизонт. Мы построим 10–24 сценария, прогоним 10 000 путей Монте-Карло на каждый и покажем три уровня риска параллельно.</p>
+            <div class="empty-features">
+              <span>Вклады и ОФЗ</span>
+              <span>Корпоративные и муниципальные бонды</span>
+              <span>Недвижимость и ипотека</span>
+              <span>Налоги и ИИС</span>
+              <span>Стресс-тесты</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="progressCard" class="progress-card card" hidden>
+          <div class="progress-top">
+            <strong id="progressTitle">Считаем сценарии</strong>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-bar"><i id="progressBar"></i></div>
+          <div class="progress-note" id="progressMessage">Готовим Монте-Карло…</div>
+        </div>
+
+        <div id="resultsContent" hidden>
+          <div class="summary-grid" id="summaryGrid"></div>
+
+          <div class="section-head">
+            <div>
+              <h2>Три уровня риска</h2>
+              <p>Одинаковые макроданные и горизонт — разные компромиссы между доходностью, просадкой и ликвидностью.</p>
+            </div>
+            <div class="section-actions">
+              <span class="badge" id="pathsBadge">10 000 путей</span>
+              <span class="badge" id="generatedBadge">—</span>
+            </div>
+          </div>
+          <div class="risk-grid" id="riskGrid"></div>
+
+          <div class="charts-grid">
+            <div class="chart-card card">
+              <div class="card-head">
+                <div>
+                  <h3>Коридор капитала</h3>
+                  <p id="fanSubtitle">P5–P95 и медиана выбранного сценария</p>
+                </div>
+                <div class="chart-legend">
+                  <span><i class="band"></i> P5–P95</span>
+                  <span><i></i> P50</span>
+                  <span><i class="dashed"></i> Взносы</span>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="fanChart" aria-label="График коридора капитала"></canvas></div>
+            </div>
+            <div class="chart-card card">
+              <div class="card-head">
+                <div>
+                  <h3>Распределение результата</h3>
+                  <p id="histSubtitle">Капитал через горизонт</p>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="histChart" aria-label="Гистограмма терминального капитала"></canvas></div>
+            </div>
+          </div>
+
+          <div class="table-card card">
+            <div class="card-head">
+              <div>
+                <h3>Топ сценариев</h3>
+                <p>Рейтинг по Sharpe, NPV, вероятности цели, устойчивости к стрессам и ликвидности. Нажмите на строку, чтобы открыть детали.</p>
+              </div>
+              <span class="badge green" id="topCountBadge">—</span>
+            </div>
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Сценарий</th>
+                    <th>Риск</th>
+                    <th>Доходность</th>
+                    <th>P50</th>
+                    <th>Цель</th>
+                    <th>Sharpe</th>
+                    <th>Ликвидность</th>
+                    <th>Налоги</th>
+                  </tr>
+                </thead>
+                <tbody id="topTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="stress-card card">
+            <div class="card-head">
+              <div>
+                <h3>Стресс-тесты</h3>
+                <p>Что будет с медианой и нижним квартилем при шоках ставки, инфляции, налогов и недвижимости.</p>
+              </div>
+              <span class="badge amber">чувствительность</span>
+            </div>
+            <div class="stress-toolbar">
+              <label for="stressSelect" style="font-size:12px;font-weight:700;color:var(--muted)">Сценарий:</label>
+              <select id="stressSelect"></select>
+            </div>
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr><th>Шок</th><th>Влияние на P50</th><th>Влияние на P5</th><th>P50 после шока</th><th>Комментарий</th></tr>
+                </thead>
+                <tbody id="stressTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="comparisons-card card">
+            <div class="card-head">
+              <div>
+                <h3>Что выгоднее</h3>
+                <p>Аренда против покупки и досрочное погашение против инвестирования — на тех же допущениях.</p>
+              </div>
+            </div>
+            <div class="comparison-grid" id="comparisonGrid"></div>
+          </div>
+
+          <div class="ai-grid">
+            <div class="ai-card card" id="aiCard">
+              <div class="card-head">
+                <div>
+                  <h3>AI-объяснение</h3>
+                  <p>Модель не считает — она объясняет готовый детерминированный расчёт.</p>
+                </div>
+                <span class="badge green" id="aiSourceBadge">template</span>
+              </div>
+              <div id="aiContent"></div>
+              <div class="ai-footer">
+                <span class="ai-source"><i></i> Числа проверены валидатором</span>
+                <button class="secondary-btn" id="refreshAiBtn" type="button">Обновить объяснение</button>
+              </div>
+            </div>
+
+            <div class="chat-card card">
+              <div class="chat-head">
+                <div class="chat-avatar">AI</div>
+                <div>
+                  <h3>Спросите про расчёт</h3>
+                  <p>Отвечает по вашему контексту, без выдуманных цифр</p>
+                </div>
+              </div>
+              <div class="chat-messages" id="chatMessages"></div>
+              <div class="chat-suggestions" id="chatSuggestions">
+                <button class="chat-suggestion" type="button" data-question="Почему выбран этот сценарий?">Почему этот сценарий?</button>
+                <button class="chat-suggestion" type="button" data-question="Какие риски при высокой ставке?">Риски ставки</button>
+                <button class="chat-suggestion" type="button" data-question="Что лучше: вклад или ОФЗ?">Вклад или ОФЗ</button>
+                <button class="chat-suggestion" type="button" data-question="Как работают налоги и ИИС?">Налоги и ИИС</button>
+                <button class="chat-suggestion" type="button" data-question="Что с ипотекой и арендой?">Ипотека и аренда</button>
+              </div>
+              <form class="chat-form" id="chatForm">
+                <textarea id="chatInput" rows="1" placeholder="Например: что будет, если ключевая ставка вырастет?" maxlength="4000"></textarea>
+                <button class="chat-send" id="chatSend" type="submit" aria-label="Отправить вопрос">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-6-7-2z"></path></svg>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="warnings" id="warnings" hidden></div>
+          <p class="disclaimer" id="disclaimer"></p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <span>ФинХелл · оптимизатор капитала v2 · данные ЦБ РФ и MOEX ISS</span>
+    <span>Не является индивидуальной инвестиционной рекомендацией</span>
+  </footer>
+</div>
+
+<div class="modal" id="detailModal" hidden>
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <div>
+        <h3 id="modalTitle">Детали сценария</h3>
+        <p id="modalSubtitle"></p>
+      </div>
+      <button class="modal-close" id="modalClose" type="button" aria-label="Закрыть">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/optimizer.js"></script>
+</body>
+</html>
