@@ -19,7 +19,8 @@ class ApiClient {
             ),
         _client = client ?? http.Client();
 
-  final String baseUrl;
+  /// Адрес можно изменить из интерфейса приложения (иконка сервера).
+  String baseUrl;
   final http.Client _client;
 
   Map<String, String> get _headers => const {

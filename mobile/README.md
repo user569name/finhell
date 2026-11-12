@@ -4,8 +4,9 @@ Flutter-клиент для Android и iOS к API `DefultCredit/optimizer` (v2).
 Интерфейс повторяет визуальный язык веб-версии: зелёный/белый/почти чёрный,
 крупные скругления, светлая и тёмная темы.
 
-> Каркас написан без локального Flutter/Dart SDK, поэтому в текущем окружении
-> не собирался. Перед запуском выполните `flutter pub get` и `flutter analyze`.
+> Release APK собирается в GitHub Actions (`.github/workflows/android-apk.yml`).
+> Готовый файл — в разделе Releases репозитория и в корне проекта
+> (`Finhell-release.apk`).
 
 ## Требования
 
@@ -47,6 +48,26 @@ flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8002
 ```powershell
 flutter run --dart-define=API_BASE_URL=http://192.168.1.10:8002
 ```
+
+Адрес сервера также можно поменять прямо в приложении: иконка сервера в правом
+верхнем углу главного экрана. Значение применяется сразу, пересборка не нужна.
+
+## APK для Android
+
+Готовый release APK: скачайте `Finhell-v0.1.0.apk` из
+[Releases](https://github.com/user569name/finhell/releases) или возьмите
+`Finhell-release.apk` из корня проекта.
+
+Установка на подключённое устройство:
+
+```powershell
+adb install -r Finhell-release.apk
+```
+
+APK содержит разрешения `INTERNET` и `usesCleartextTraffic`, поэтому может
+обращаться к локальному FastAPI по HTTP. Для эмулятора используйте
+`http://10.0.2.2:8002`, для физического телефона — `http://<IP-компьютера>:8002`
+(компьютер и телефон должны быть в одной сети, порт 8002 открыт в брандмауэре).
 
 ## Что реализовано
 

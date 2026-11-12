@@ -127,6 +127,60 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _editServer() async {
+    final controller = TextEditingController(text: widget.api.baseUrl);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Адрес сервера'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Укажите адрес, по которому доступен FastAPI. '
+              'Для эмулятора — http://10.0.2.2:8002, для телефона — '
+              'http://<IP-компьютера>:8002.',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(labelText: 'API_BASE_URL'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || value == null) return;
+    final normalized = value.replaceAll(RegExp(r'/+$'), '');
+    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Адрес должен начинаться с http:// или https://'),
+        ),
+      );
+      return;
+    }
+    setState(() => widget.api.baseUrl = normalized);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Сервер: $normalized')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -164,6 +218,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Адрес сервера',
+            onPressed: _editServer,
+            icon: const Icon(Icons.dns_outlined),
+          ),
           IconButton(
             tooltip: 'Светлая / тёмная тема',
             onPressed: widget.onToggleTheme,
@@ -326,6 +385,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     label: Text(_loading ? 'Считаем…' : 'Рассчитать план'),
                   ),
                   const SizedBox(height: 10),
+                  Text(
+                    'Сервер: ${widget.api.baseUrl}',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     '10 000 путей на сценарий. Это не индивидуальная инвестиционная рекомендация.',
                     textAlign: TextAlign.center,

@@ -44,6 +44,33 @@ jobs:
           cp -R /tmp/finhell_lib lib
           rm -f test/widget_test.dart
 
+      - name: Patch Android manifest
+        working-directory: mobile
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('android/app/src/main/AndroidManifest.xml')
+          text = path.read_text(encoding='utf-8')
+
+          if 'android:usesCleartextTraffic' not in text:
+              text = text.replace(
+                  '<application',
+                  '<application\n        android:usesCleartextTraffic="true"',
+                  1,
+              )
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace(
+                  '<application',
+                  '<uses-permission android:name="android.permission.INTERNET" />\n    <application',
+                  1,
+              )
+
+          text = text.replace('android:label="finhell"', 'android:label="ФинХелл"')
+          path.write_text(text, encoding='utf-8')
+          print(text)
+          PY
+
       - name: Install dependencies
         working-directory: mobile
         run: flutter pub get
