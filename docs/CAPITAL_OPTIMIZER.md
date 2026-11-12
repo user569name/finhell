@@ -722,6 +722,9 @@ NumPy/SciPy или векторизовать по путям.
 
 ```env
 OPTIMIZER_JOB_WORKERS=2
+FINHELL_AUTH_SECRET=<случайная строка 32+ байта>
+FINHELL_DB_PATH=/var/lib/finhell/finhell.db
+FINHELL_TOKEN_TTL_SECONDS=2592000
 LLM_PROVIDER=
 LLM_API_KEY=
 LLM_BASE_URL=
@@ -735,8 +738,10 @@ DATABASE_URL=postgresql+asyncpg://...
 ### Безопасность
 
 - Не логировать полные профили и суммы; маскировать персональные данные.
+- Задать `FINHELL_AUTH_SECRET` вне репозитория; не коммитить SQLite-базу и
+  файл `auth_secret`.
 - Ограничить CORS доверенными доменами.
-- Rate limit на `/api/v2/ai/*` и `/optimize/async`.
+- Rate limit на `/api/v2/auth/*`, `/api/v2/ai/*` и `/optimize/async`.
 - Валидация Pydantic на всех входах, `extra="forbid"`.
 - LLM получает только сжатый контекст без имени, телефона, email и точного
   адреса.
