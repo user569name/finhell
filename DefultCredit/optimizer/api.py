@@ -2,6 +2,10 @@
 
 Маршруты монтируются в основное приложение из simulator.py:
     /api/v2/health
+    /api/v2/auth/register       — регистрация по email
+    /api/v2/auth/login          — вход и выдача Bearer-токена
+    /api/v2/auth/me             — текущий пользователь
+    /api/v2/auth/logout         — выход
     /api/v2/macro
     /api/v2/instruments
     /api/v2/optimize            — синхронно, для небольших расчётов
@@ -12,17 +16,20 @@
     /api/v2/compare/rent-vs-buy
     /api/v2/compare/prepay-vs-invest
     /optimizer                  — Sber-style веб-интерфейс
+
+Расчёты, задания и AI требуют Bearer-токен; health, macro, instruments,
+scenarios и compare остаются публичными.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 
-from . import ai
+from . import ai, auth as auth_service
 from .engine import DISCLAIMER, run_optimization
 from .instruments import build_assets, liquidity_label, scenario_templates
 from .jobs import JOBS
@@ -32,6 +39,11 @@ from .models import (
     AIChatResponse,
     AIContextRequest,
     AIExplanation,
+    AuthLoginRequest,
+    AuthMeResponse,
+    AuthRegisterRequest,
+    AuthResponse,
+    AuthUser,
     JobStatus,
     MacroSnapshot,
     MarketOverrides,
@@ -70,6 +82,78 @@ def optimizer_health() -> Dict[str, object]:
         "jobs": JOBS.stats(),
         "ai": ai.provider_status(),
         "contexts_cached": ai.CONTEXT_CACHE.size(),
+        "auth": {
+            "mode": "email-password",
+            "token_ttl_seconds": auth_service.TOKEN_TTL_SECONDS,
+        },
+    }
+
+
+@router.post(
+    "/auth/register",
+    response_model=AuthResponse,
+    status_code=201,
+    summary="Регистрация по email",
+)
+def auth_register(request: AuthRegisterRequest) -> AuthResponse:
+    try:
+        user, token = auth_service.register(
+            request.email,
+            request.password,
+            request.name,
+        )
+    except auth_service.EmailTakenError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except auth_service.ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return AuthResponse(
+        token=token,
+        expires_in=auth_service.TOKEN_TTL_SECONDS,
+        user=AuthUser(**user),
+    )
+
+
+@router.post(
+    "/auth/login",
+    response_model=AuthResponse,
+    summary="Вход по email",
+)
+def auth_login(request: AuthLoginRequest) -> AuthResponse:
+    try:
+        user, token = auth_service.login(request.email, request.password)
+    except auth_service.ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except auth_service.InvalidCredentialsError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    return AuthResponse(
+        token=token,
+        expires_in=auth_service.TOKEN_TTL_SECONDS,
+        user=AuthUser(**user),
+    )
+
+
+@router.get(
+    "/auth/me",
+    response_model=AuthMeResponse,
+    summary="Текущий пользователь",
+)
+def auth_me(
+    user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> AuthMeResponse:
+    return AuthMeResponse(user=AuthUser(**user))
+
+
+@router.post("/auth/logout", summary="Выход (токен удаляет клиент)")
+def auth_logout(
+    _user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> Dict[str, str]:
+    return {
+        "status": "ok",
+        "message": "Токен удаляется на клиенте; сервер его не хранит.",
     }
 
 
@@ -195,7 +279,10 @@ def scenarios_preview(
     response_model=OptimizeResponse,
     summary="Синхронный расчёт (до 3000 путей на сценарий)",
 )
-def optimize_sync(request: OptimizeRequest) -> OptimizeResponse:
+def optimize_sync(
+    request: OptimizeRequest,
+    _user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> OptimizeResponse:
     if request.options.monte_carlo_paths > SYNC_PATH_LIMIT:
         raise HTTPException(
             status_code=413,
@@ -215,8 +302,11 @@ def optimize_sync(request: OptimizeRequest) -> OptimizeResponse:
     status_code=202,
     summary="Фоновый расчёт на 10 000+ путей",
 )
-def optimize_async(request: OptimizeRequest) -> Dict[str, object]:
-    job_id = JOBS.submit(request)
+def optimize_async(
+    request: OptimizeRequest,
+    user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> Dict[str, object]:
+    job_id = JOBS.submit(request, user_id=user["id"])
     estimated = max(
         2,
         int(
@@ -236,20 +326,29 @@ def optimize_async(request: OptimizeRequest) -> Dict[str, object]:
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatus, summary="Статус фонового расчёта")
-def job_status(job_id: str) -> JobStatus:
-    job = JOBS.get(job_id)
+def job_status(
+    job_id: str,
+    user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> JobStatus:
+    job = JOBS.get(job_id, user_id=user["id"])
     if job is None:
         raise HTTPException(status_code=404, detail="Задание не найдено или истекло.")
     return job
 
 
 @router.get("/jobs", response_model=List[JobStatus], summary="Последние задания")
-def jobs_list(limit: int = Query(20, ge=1, le=100)) -> List[JobStatus]:
-    return JOBS.list_recent(limit=limit)
+def jobs_list(
+    limit: int = Query(20, ge=1, le=100),
+    user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> List[JobStatus]:
+    return JOBS.list_recent(limit=limit, user_id=user["id"])
 
 
 @router.post("/ai/explain", response_model=AIExplanation, summary="AI-объяснение расчёта")
-def ai_explain(request: AIContextRequest) -> AIExplanation:
+def ai_explain(
+    request: AIContextRequest,
+    _user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> AIExplanation:
     try:
         return ai.explain(
             context_id=request.context_id,
@@ -261,7 +360,10 @@ def ai_explain(request: AIContextRequest) -> AIExplanation:
 
 
 @router.post("/ai/explain/stream", summary="AI-объяснение (SSE)")
-def ai_explain_stream(request: AIContextRequest) -> StreamingResponse:
+def ai_explain_stream(
+    request: AIContextRequest,
+    _user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> StreamingResponse:
     generator = ai.stream_explanation(
         context_id=request.context_id,
         context=request.context,
@@ -275,7 +377,10 @@ def ai_explain_stream(request: AIContextRequest) -> StreamingResponse:
 
 
 @router.post("/ai/chat", response_model=AIChatResponse, summary="Чат по расчёту")
-def ai_chat(request: AIChatRequest) -> AIChatResponse:
+def ai_chat(
+    request: AIChatRequest,
+    _user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> AIChatResponse:
     try:
         return ai.chat(
             context_id=request.context_id,
@@ -289,7 +394,10 @@ def ai_chat(request: AIChatRequest) -> AIChatResponse:
 
 
 @router.post("/ai/chat/stream", summary="Чат по расчёту (SSE)")
-def ai_chat_stream(request: AIChatRequest) -> StreamingResponse:
+def ai_chat_stream(
+    request: AIChatRequest,
+    _user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> StreamingResponse:
     generator = ai.stream_chat(
         context_id=request.context_id,
         context=request.context,

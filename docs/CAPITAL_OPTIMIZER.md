@@ -24,9 +24,10 @@ AI-объяснениями и Sber-style интерфейсом.
 | Стресс-тесты | работает | `optimizer/engine.py` |
 | AI-объяснения и чат | работает в шаблонном режиме; LLM — опционально | `optimizer/ai.py` |
 | Фоновые задания | работает | `optimizer/jobs.py` |
+| Авторизация по email | регистрация, вход, PBKDF2, HMAC-токены | `optimizer/auth.py` |
 | Sber-style веб-интерфейс | работает | `templates/optimizer.html`, `static/optimizer.css`, `static/optimizer.js` |
-| Flutter-каркас | форма, результаты, графики, AI-чат; не собран без Flutter SDK | `mobile/` |
-| Тесты | 61 тест, все проходят | `DefultCredit/tests/` |
+| Flutter-клиент | вход, форма, результаты, графики, AI-чат; собирается в GitHub Actions | `mobile/` |
+| Тесты | 69 тестов, все проходят | `DefultCredit/tests/` |
 
 ### Осознанные ограничения текущего стенда
 
@@ -503,6 +504,7 @@ LLM **не считает**. Расчётный движок формирует 
 
 Каркас Flutter лежит в `mobile/` и повторяет Sber-style веб-интерфейс:
 
+- `lib/screens/auth_screen.dart` — вход и регистрация по email;
 - `lib/screens/home_screen.dart` — форма капитала, взноса, цели, риска,
   ликвидности, кредита, расходов и параметров расчёта;
 - `lib/screens/results_screen.dart` — hero лучшего сценария, макроданные,
@@ -511,8 +513,14 @@ LLM **не считает**. Расчётный движок формирует 
 - `lib/widgets/fan_chart.dart`, `histogram_chart.dart` — графики на `fl_chart`;
 - `lib/widgets/risk_card.dart` — карточка уровня риска и мини-состав портфеля;
 - `lib/widgets/ai_chat.dart` — чат по `context_id` с историей;
-- `lib/services/api_client.dart` — асинхронный расчёт и polling заданий;
+- `lib/services/api_client.dart` — асинхронный расчёт, polling заданий и
+  Bearer-токен;
+- `lib/services/auth_store.dart` — сохранение токена и адреса сервера;
 - `lib/theme/sber_theme.dart` — светлая и тёмная темы.
+
+При запуске приложение восстанавливает сессию, проверяет токен через
+`/api/v2/auth/me` и показывает экран входа, если сессии нет. Выход — в меню
+аккаунта в шапке.
 
 Запуск:
 
@@ -534,6 +542,31 @@ SDK не установлен. Это ограничение среды, а не
 ## 9. API
 
 Базовый URL локального стенда: `http://127.0.0.1:8002`.
+
+### Авторизация
+
+```bash
+# регистрация
+curl -X POST http://127.0.0.1:8002/api/v2/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "password123", "name": "Имя"}'
+
+# вход
+curl -X POST http://127.0.0.1:8002/api/v2/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "password123"}'
+
+# проверка токена
+curl http://127.0.0.1:8002/api/v2/auth/me \
+  -H "Authorization: Bearer <token>"
+```
+
+Ответ регистрации и входа: `{"token": "...", "token_type": "bearer",
+"expires_in": 2592000, "user": {...}}`. Токен — HMAC-SHA256 подпись,
+действует 30 дней. Пароли хранятся в SQLite как PBKDF2-HMAC-SHA256
+(210 000 итераций, случайная соль). Публичные маршруты: `health`, `macro`,
+`instruments`, `scenarios`, `compare/*`; `optimize`, `jobs`, `ai` требуют
+заголовок `Authorization: Bearer <token>`. Задания видны только их владельцу.
 
 ### Health
 
@@ -665,9 +698,11 @@ NumPy/SciPy или векторизовать по путям.
 - структура ответа, ранжирование, фильтры недвижимости и ипотеки;
 - AI-контекст, валидатор, шаблоны, чат, модерация;
 - парсер MOEX ISS и макросрез;
+- регистрация, вход, валидация, истечение и подделка токена;
+- защита расчётов, AI и заданий, изоляция заданий по пользователю;
 - 22 теста v1-симулятора.
 
-Итог: **61 тест, все проходят** (~6 секунд).
+Итог: **69 тестов, все проходят** (~8 секунд).
 
 ---
 

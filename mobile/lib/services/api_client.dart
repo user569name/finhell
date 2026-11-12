@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/auth_models.dart';
 import '../models/optimizer_models.dart';
 
 /// HTTP-клиент оптимизатора.
@@ -23,12 +24,78 @@ class ApiClient {
   String baseUrl;
   final http.Client _client;
 
-  Map<String, String> get _headers => const {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
+  /// Bearer-токен, полученный после входа по email.
+  String? token;
+
+  /// Вызывается, когда сервер ответил 401 — сессия истекла.
+  void Function()? onUnauthorized;
+
+  Map<String, String> get _headers {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final current = token;
+    if (current != null && current.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $current';
+    }
+    return headers;
+  }
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
+
+  Future<AuthSession> register({
+    required String email,
+    required String password,
+    String name = '',
+  }) async {
+    final data = await _post(
+      '/api/v2/auth/register',
+      {'email': email, 'password': password, 'name': name},
+      timeout: const Duration(seconds: 40),
+    );
+    final session = AuthSession.fromJson(data);
+    token = session.token;
+    return session;
+  }
+
+  Future<AuthSession> login({
+    required String email,
+    required String password,
+  }) async {
+    final data = await _post(
+      '/api/v2/auth/login',
+      {'email': email, 'password': password},
+      timeout: const Duration(seconds: 40),
+    );
+    final session = AuthSession.fromJson(data);
+    token = session.token;
+    return session;
+  }
+
+  Future<AuthUser> me() async {
+    final response = await _client
+        .get(_uri('/api/v2/auth/me'), headers: _headers)
+        .timeout(const Duration(seconds: 25));
+    _ensureOk(response);
+    final data = _decode(response);
+    final user = data['user'];
+    if (user is! Map<String, dynamic>) {
+      throw ApiException('Сервер не вернул данные пользователя.');
+    }
+    return AuthUser.fromJson(user);
+  }
+
+  Future<void> logout() async {
+    try {
+      await _client
+          .post(_uri('/api/v2/auth/logout'), headers: _headers)
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // сервер не хранит токены — выход всё равно локальный
+    }
+    token = null;
+  }
 
   Future<MacroSnapshot> fetchMacro({bool refresh = false}) async {
     final response = await _client
@@ -39,12 +106,11 @@ class ApiClient {
   }
 
   Future<String> startOptimization(Map<String, dynamic> payload) async {
-    final response = await _client
-        .post(_uri('/api/v2/optimize/async'),
-            headers: _headers, body: jsonEncode(payload))
-        .timeout(const Duration(seconds: 30));
-    _ensureOk(response);
-    final data = _decode(response);
+    final data = await _post(
+      '/api/v2/optimize/async',
+      payload,
+      timeout: const Duration(seconds: 30),
+    );
     final jobId = data['job_id'];
     if (jobId is! String || jobId.isEmpty) {
       throw ApiException('Сервер не вернул job_id.');
@@ -66,35 +132,41 @@ class ApiClient {
     List<Map<String, String>> history = const [],
     bool useLlm = true,
   }) async {
-    final response = await _client
-        .post(
-          _uri('/api/v2/ai/chat'),
-          headers: _headers,
-          body: jsonEncode({
-            'context_id': contextId,
-            'question': question,
-            'history': history,
-            'use_llm': useLlm,
-          }),
-        )
-        .timeout(const Duration(seconds: 40));
-    _ensureOk(response);
-    return ChatResponse.fromJson(_decode(response));
+    final data = await _post(
+      '/api/v2/ai/chat',
+      {
+        'context_id': contextId,
+        'question': question,
+        'history': history,
+        'use_llm': useLlm,
+      },
+      timeout: const Duration(seconds: 40),
+    );
+    return ChatResponse.fromJson(data);
   }
 
   Future<AiExplanation> explain({
     required String contextId,
     bool useLlm = true,
   }) async {
+    final data = await _post(
+      '/api/v2/ai/explain',
+      {'context_id': contextId, 'use_llm': useLlm},
+      timeout: const Duration(seconds: 40),
+    );
+    return AiExplanation.fromJson(data);
+  }
+
+  Future<Map<String, dynamic>> _post(
+    String path,
+    Map<String, dynamic> payload, {
+    required Duration timeout,
+  }) async {
     final response = await _client
-        .post(
-          _uri('/api/v2/ai/explain'),
-          headers: _headers,
-          body: jsonEncode({'context_id': contextId, 'use_llm': useLlm}),
-        )
-        .timeout(const Duration(seconds: 40));
+        .post(_uri(path), headers: _headers, body: jsonEncode(payload))
+        .timeout(timeout);
     _ensureOk(response);
-    return AiExplanation.fromJson(_decode(response));
+    return _decode(response);
   }
 
   Map<String, dynamic> _decode(http.Response response) {
@@ -105,6 +177,9 @@ class ApiClient {
 
   void _ensureOk(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) return;
+    if (response.statusCode == 401) {
+      onUnauthorized?.call();
+    }
     String detail = 'HTTP ${response.statusCode}';
     try {
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
@@ -114,16 +189,17 @@ class ApiClient {
     } catch (_) {
       // оставляем код статуса
     }
-    throw ApiException(detail);
+    throw ApiException(detail, statusCode: response.statusCode);
   }
 
   void dispose() => _client.close();
 }
 
 class ApiException implements Exception {
-  ApiException(this.message);
+  ApiException(this.message, {this.statusCode});
 
   final String message;
+  final int? statusCode;
 
   @override
   String toString() => message;

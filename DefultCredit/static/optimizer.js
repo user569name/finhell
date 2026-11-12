@@ -6,6 +6,7 @@
   const nf1 = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const nf2 = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const AUTH_STORAGE_KEY = "finhell-auth";
   const RISK_LABELS = { low: "Низкий риск", medium: "Средний риск", high: "Высокий риск" };
   const RISK_SHORT = { low: "Низкий", medium: "Средний", high: "Высокий" };
   const ASSET_COLORS = {
@@ -39,6 +40,7 @@
     busy: false,
     toastTimer: null,
     lastPayload: null,
+    authMode: "login",
   };
 
   // ---------------------------------------------------------------------
@@ -114,14 +116,186 @@
   }
 
   // ---------------------------------------------------------------------
+  // Авторизация
+  // ---------------------------------------------------------------------
+  function loadAuth() {
+    try {
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.token) return null;
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveAuth(auth) {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+  }
+
+  function clearAuth() {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+
+  function setAuthError(message) {
+    const box = $("authError");
+    if (!box) return;
+    box.textContent = message || "";
+    box.hidden = !message;
+  }
+
+  function showAuthGate(message = "") {
+    const gate = $("authGate");
+    if (!gate) return;
+    gate.hidden = false;
+    document.body.classList.add("auth-locked");
+    setAuthError(message);
+    window.setTimeout(() => $("authEmail")?.focus(), 60);
+  }
+
+  function hideAuthGate() {
+    const gate = $("authGate");
+    if (gate) gate.hidden = true;
+    document.body.classList.remove("auth-locked");
+    setAuthError("");
+  }
+
+  function updateAuthUser() {
+    const auth = loadAuth();
+    const wrap = $("authUser");
+    const email = $("authUserEmail");
+    if (wrap && email) {
+      const value = auth?.user?.email || "";
+      email.textContent = value;
+      wrap.hidden = !value;
+    }
+  }
+
+  function setAuthMode(mode) {
+    state.authMode = mode === "register" ? "register" : "login";
+    const register = state.authMode === "register";
+    document.querySelectorAll("[data-auth-mode]").forEach((tab) => {
+      const active = tab.dataset.authMode === state.authMode;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    const nameField = $("authNameField");
+    const confirmField = $("authConfirmField");
+    if (nameField) nameField.hidden = !register;
+    if (confirmField) confirmField.hidden = !register;
+    const title = $("authTitle");
+    const subtitle = $("authSubtitle");
+    const submit = $("authSubmit");
+    if (title) title.textContent = register ? "Регистрация" : "Вход в оптимизатор";
+    if (subtitle) {
+      subtitle.textContent = register
+        ? "Создайте аккаунт по email — расчёты будут доступны после входа."
+        : "Войдите по email, чтобы запускать расчёты и пользоваться AI-чатом.";
+    }
+    if (submit) submit.textContent = register ? "Создать аккаунт" : "Войти";
+    const password = $("authPassword");
+    if (password) password.autocomplete = register ? "new-password" : "current-password";
+    setAuthError("");
+  }
+
+  async function submitAuth(event) {
+    event.preventDefault();
+    const register = state.authMode === "register";
+    const email = $("authEmail").value.trim();
+    const password = $("authPassword").value;
+    const name = $("authName").value.trim();
+    const confirm = $("authConfirm").value;
+
+    if (!email || !email.includes("@")) {
+      setAuthError("Введите корректный email.");
+      $("authEmail").focus();
+      return;
+    }
+    if (password.length < 8) {
+      setAuthError("Пароль должен содержать минимум 8 символов.");
+      $("authPassword").focus();
+      return;
+    }
+    if (register && password !== confirm) {
+      setAuthError("Пароли не совпадают.");
+      $("authConfirm").focus();
+      return;
+    }
+
+    const submit = $("authSubmit");
+    submit.disabled = true;
+    submit.textContent = register ? "Создаём аккаунт…" : "Входим…";
+    setAuthError("");
+    try {
+      const data = await api(
+        register ? "/api/v2/auth/register" : "/api/v2/auth/login",
+        {
+          method: "POST",
+          body: JSON.stringify(register ? { email, password, name } : { email, password }),
+        },
+      );
+      saveAuth({ token: data.token, user: data.user });
+      updateAuthUser();
+      hideAuthGate();
+      await loadReference();
+      showToast(register ? "Аккаунт создан. Добро пожаловать!" : `С возвращением, ${data.user.email}.`);
+    } catch (error) {
+      setAuthError(error.message || "Не удалось войти. Проверьте email и пароль.");
+    } finally {
+      submit.disabled = false;
+      submit.textContent = register ? "Создать аккаунт" : "Войти";
+    }
+  }
+
+  function bindAuthEvents() {
+    document.querySelectorAll("[data-auth-mode]").forEach((tab) => {
+      tab.addEventListener("click", () => setAuthMode(tab.dataset.authMode));
+    });
+    $("authForm").addEventListener("submit", submitAuth);
+    $("logoutBtn").addEventListener("click", () => {
+      clearAuth();
+      window.location.reload();
+    });
+  }
+
+  async function initAuth() {
+    const auth = loadAuth();
+    if (!auth?.token) {
+      showAuthGate();
+      return;
+    }
+    updateAuthUser();
+    try {
+      const me = await api("/api/v2/auth/me");
+      saveAuth({ token: auth.token, user: me.user });
+      updateAuthUser();
+      hideAuthGate();
+      await loadReference();
+    } catch (_error) {
+      clearAuth();
+      showAuthGate("Сессия истекла. Войдите снова.");
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // API
   // ---------------------------------------------------------------------
   async function api(path, options = {}) {
-    const response = await fetch(path, {
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-      ...options,
-    });
+    const auth = loadAuth();
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    };
+    if (auth?.token) {
+      headers.Authorization = `Bearer ${auth.token}`;
+    }
+    const response = await fetch(path, { ...options, headers });
     if (!response.ok) {
+      if (response.status === 401 && auth?.token) {
+        clearAuth();
+        showAuthGate("Сессия истекла. Войдите снова.");
+      }
       let detail = response.statusText;
       try {
         const data = await response.json();
@@ -1190,12 +1364,14 @@
     });
   }
 
-  function init() {
+  async function init() {
     const stored = localStorage.getItem("finhell-theme");
     const preferred = stored || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     setTheme(preferred);
     bindEvents();
-    loadReference();
+    bindAuthEvents();
+    updateAuthUser();
+    await initAuth();
   }
 
   window.__finhellOptimizer = {

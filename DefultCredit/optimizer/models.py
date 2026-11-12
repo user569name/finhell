@@ -343,6 +343,43 @@ class OptimizeResponse(BaseModel):
     ai_template: AIExplanation
 
 
+class AuthRegisterRequest(BaseModel):
+    """Регистрация по email и паролю."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=128)
+    name: str = Field("", max_length=120)
+
+
+class AuthLoginRequest(BaseModel):
+    """Вход по email и паролю."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=128)
+
+
+class AuthUser(BaseModel):
+    id: str
+    email: str
+    name: str = ""
+    created_at: str
+
+
+class AuthResponse(BaseModel):
+    token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+    user: AuthUser
+
+
+class AuthMeResponse(BaseModel):
+    user: AuthUser
+
+
 class AIContextRequest(BaseModel):
     context_id: Optional[str] = None
     context: Optional[Dict[str, object]] = None

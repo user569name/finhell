@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/auth_models.dart';
 import '../models/optimizer_models.dart';
 import '../services/api_client.dart';
 import '../theme/sber_theme.dart';
@@ -9,13 +10,19 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     required this.api,
+    required this.user,
+    required this.onLogout,
     required this.isDark,
     required this.onToggleTheme,
+    this.onBaseUrlChanged,
   });
 
   final ApiClient api;
+  final AuthUser user;
+  final Future<void> Function() onLogout;
   final bool isDark;
   final VoidCallback onToggleTheme;
+  final Future<void> Function(String baseUrl)? onBaseUrlChanged;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -176,6 +183,8 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     setState(() => widget.api.baseUrl = normalized);
+    await widget.onBaseUrlChanged?.call(normalized);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Сервер: $normalized')),
     );
@@ -227,6 +236,47 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Светлая / тёмная тема',
             onPressed: widget.onToggleTheme,
             icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Аккаунт',
+            icon: const Icon(Icons.account_circle_outlined),
+            onSelected: (value) async {
+              if (value == 'logout') await widget.onLogout();
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.user.displayName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (widget.user.name.trim().isNotEmpty)
+                      Text(
+                        widget.user.email,
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 18),
+                    SizedBox(width: 8),
+                    Text('Выйти'),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: 8),
         ],

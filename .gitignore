@@ -16,6 +16,9 @@ venv/
 !.env.example
 *.pem
 *.key
+DefultCredit/data/
+*.db
+*.sqlite3
 
 # IDE / OS
 .vscode/

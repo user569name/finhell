@@ -30,6 +30,7 @@ def _now_iso() -> str:
 @dataclass
 class Job:
     job_id: str
+    user_id: Optional[str] = None
     status: str = "queued"
     progress: int = 0
     message: str = "В очереди"
@@ -69,9 +70,13 @@ class JobManager:
         for job in finished[: max(0, len(self._jobs) - MAX_JOBS)]:
             self._jobs.pop(job.job_id, None)
 
-    def submit(self, request: OptimizeRequest) -> str:
+    def submit(
+        self,
+        request: OptimizeRequest,
+        user_id: Optional[str] = None,
+    ) -> str:
         job_id = uuid.uuid4().hex
-        job = Job(job_id=job_id)
+        job = Job(job_id=job_id, user_id=user_id)
         with self._lock:
             self._cleanup_locked()
             self._jobs[job_id] = job
@@ -142,11 +147,17 @@ class JobManager:
             result=result,
         )
 
-    def get(self, job_id: str) -> Optional[JobStatus]:
+    def get(
+        self,
+        job_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[JobStatus]:
         with self._lock:
             self._cleanup_locked()
             job = self._jobs.get(job_id)
             if job is None:
+                return None
+            if user_id is not None and job.user_id != user_id:
                 return None
             return JobStatus(
                 job_id=job.job_id,
@@ -159,11 +170,20 @@ class JobManager:
                 error=job.error,
             )
 
-    def list_recent(self, limit: int = 20) -> List[JobStatus]:
+    def list_recent(
+        self,
+        limit: int = 20,
+        user_id: Optional[str] = None,
+    ) -> List[JobStatus]:
         with self._lock:
             self._cleanup_locked()
+            candidates = [
+                job
+                for job in self._jobs.values()
+                if user_id is None or job.user_id == user_id
+            ]
             jobs = sorted(
-                self._jobs.values(),
+                candidates,
                 key=lambda job: job.created_at,
                 reverse=True,
             )[: max(1, min(limit, 100))]
