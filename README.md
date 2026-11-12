@@ -79,8 +79,22 @@ DefultCredit/
     └── test_optimizer.py
 
 docs/CAPITAL_OPTIMIZER.md     полная документация v2
-mobile/                       Flutter-каркас Android/iOS
+mobile/                       Flutter-клиент Android (APK в Releases)
 ```
+
+## Android APK
+
+Готовый release APK:
+[Finhell-v0.1.0.apk](https://github.com/user569name/finhell/releases/download/v0.1.0/Finhell-v0.1.0.apk)
+(~49 МБ, package `ru.finhell.finhell`, minSdk 24, targetSdk 36). Собирается
+в GitHub Actions workflow `.github/workflows/android-apk.yml`.
+
+```powershell
+adb install -r Finhell-release.apk
+```
+
+Адрес API меняется прямо в приложении (иконка сервера в шапке): для эмулятора —
+`http://10.0.2.2:8002`, для телефона — `http://<IP-компьютера>:8002`.
 
 ## API v2
 
@@ -128,7 +142,7 @@ curl http://127.0.0.1:8002/api/v2/jobs/<job_id>
 - Живые данные ЦБ/MOEX запрашиваются только при `refresh=true`; по умолчанию
   используется кэш или демо-срез.
 - LLM-провайдеры реализованы, но без ключей проверен только шаблонный режим.
-- Flutter-каркас написан, но не собирался: в окружении нет Flutter/Dart SDK.
+- APK собран в GitHub Actions; локально Flutter/Dart SDK не установлен.
 - Это не индивидуальная инвестиционная рекомендация. Проверяйте условия
   у банка, брокера и налогового консультанта.
 
