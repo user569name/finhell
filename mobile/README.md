@@ -19,7 +19,11 @@ Flutter-клиент для Android и iOS к API `DefultCredit/optimizer` (v2).
 Из корня репозитория:
 
 ```powershell
+# доступ только с этого компьютера
 .\myvenv\Scripts\python.exe -m uvicorn DefultCredit.simulator:app --host 127.0.0.1 --port 8002
+
+# доступ с телефона в той же Wi-Fi сети
+.\myvenv\Scripts\python.exe -m uvicorn DefultCredit.simulator:app --host 0.0.0.0 --port 8002
 ```
 
 Проверка:
