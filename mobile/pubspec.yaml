@@ -1,7 +1,7 @@
 name: finhell_optimizer
 description: "ФинХелл — оптимизатор капитала для Android и iOS."
 publish_to: "none"
-version: 0.2.0+2
+version: 0.3.0+3
 
 environment:
   sdk: ">=3.6.0 <4.0.0"

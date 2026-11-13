@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/auth_models.dart';
 import '../models/optimizer_models.dart';
+import '../models/token_models.dart';
 
 /// HTTP-клиент оптимизатора.
 ///
@@ -105,6 +106,35 @@ class ApiClient {
     return MacroSnapshot.fromJson(_decode(response));
   }
 
+  /// Баланс токенов и условия rewarded-рекламы.
+  Future<TokenStatus> fetchTokenStatus() async {
+    final response = await _client
+        .get(_uri('/api/v2/tokens'), headers: _headers)
+        .timeout(const Duration(seconds: 25));
+    _ensureOk(response);
+    return TokenStatus.fromJson(_decode(response));
+  }
+
+  /// Создаёт или возобновляет сессию rewarded-рекламы.
+  Future<AdStartResult> startAd() async {
+    final data = await _post(
+      '/api/v2/tokens/ad/start',
+      const {},
+      timeout: const Duration(seconds: 25),
+    );
+    return AdStartResult.fromJson(data);
+  }
+
+  /// Начисляет награду после полного просмотра рекламы.
+  Future<AdCompleteResult> completeAd(String sessionId) async {
+    final data = await _post(
+      '/api/v2/tokens/ad/complete',
+      {'session_id': sessionId},
+      timeout: const Duration(seconds: 25),
+    );
+    return AdCompleteResult.fromJson(data);
+  }
+
   Future<String> startOptimization(Map<String, dynamic> payload) async {
     final data = await _post(
       '/api/v2/optimize/async',
@@ -180,26 +210,60 @@ class ApiClient {
     if (response.statusCode == 401) {
       onUnauthorized?.call();
     }
-    String detail = 'HTTP ${response.statusCode}';
+    var detail = 'HTTP ${response.statusCode}';
+    String? code;
+    int? retryAfterSeconds;
     try {
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is Map && decoded['detail'] != null) {
-        detail = decoded['detail'].toString();
+      if (decoded is Map) {
+        final rawDetail = decoded['detail'];
+        if (rawDetail is Map) {
+          code = rawDetail['code']?.toString();
+          final message = rawDetail['message']?.toString();
+          if (message != null && message.isNotEmpty) detail = message;
+          final retry = rawDetail['retry_after_seconds'];
+          if (retry is num) retryAfterSeconds = retry.ceil();
+        } else if (rawDetail != null) {
+          detail = rawDetail.toString();
+        }
       }
     } catch (_) {
       // оставляем код статуса
     }
-    throw ApiException(detail, statusCode: response.statusCode);
+    if (retryAfterSeconds == null) {
+      final header = response.headers['retry-after'];
+      if (header != null) retryAfterSeconds = int.tryParse(header.trim());
+    }
+    throw ApiException(
+      detail,
+      statusCode: response.statusCode,
+      code: code,
+      retryAfterSeconds: retryAfterSeconds,
+    );
   }
 
   void dispose() => _client.close();
 }
 
 class ApiException implements Exception {
-  ApiException(this.message, {this.statusCode});
+  ApiException(
+    this.message, {
+    this.statusCode,
+    this.code,
+    this.retryAfterSeconds,
+  });
 
   final String message;
   final int? statusCode;
+
+  /// Машинный код ошибки: `insufficient_tokens`, `ad_cooldown` и т.д.
+  final String? code;
+
+  /// Сколько секунд ждать до следующей попытки (для 429/409).
+  final int? retryAfterSeconds;
+
+  bool get isInsufficientTokens =>
+      statusCode == 402 || code == 'insufficient_tokens';
 
   @override
   String toString() => message;

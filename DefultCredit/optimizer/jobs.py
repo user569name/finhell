@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+from . import auth as auth_service
 from .engine import run_optimization
 from .models import JobStatus, OptimizeRequest, OptimizeResponse
 
@@ -40,6 +41,7 @@ class Job:
     error: Optional[str] = None
     started_at: float = 0.0
     finished_at: float = 0.0
+    charged_tokens: int = 0
 
 
 class JobManager:
@@ -74,9 +76,14 @@ class JobManager:
         self,
         request: OptimizeRequest,
         user_id: Optional[str] = None,
+        charged_tokens: int = 0,
     ) -> str:
         job_id = uuid.uuid4().hex
-        job = Job(job_id=job_id, user_id=user_id)
+        job = Job(
+            job_id=job_id,
+            user_id=user_id,
+            charged_tokens=max(0, int(charged_tokens)),
+        )
         with self._lock:
             self._cleanup_locked()
             self._jobs[job_id] = job
@@ -123,10 +130,24 @@ class JobManager:
         try:
             result = run_optimization(request, progress_callback=progress_callback)
         except Exception as exc:  # noqa: BLE001
+            refund_user: Optional[str] = None
+            refund_amount = 0
             with self._lock:
                 job = self._jobs.get(job_id)
                 if job is not None:
                     job.finished_at = time.time()
+                    refund_user = job.user_id
+                    refund_amount = job.charged_tokens
+                    job.charged_tokens = 0
+            if refund_user and refund_amount > 0:
+                try:
+                    auth_service.refund_tokens(
+                        refund_user,
+                        refund_amount,
+                        meta=f"job:{job_id}",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             self._update(
                 job_id,
                 status="error",

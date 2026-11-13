@@ -367,6 +367,7 @@ class AuthUser(BaseModel):
     email: str
     name: str = ""
     created_at: str
+    tokens: int = 0
 
 
 class AuthResponse(BaseModel):
@@ -378,6 +379,54 @@ class AuthResponse(BaseModel):
 
 class AuthMeResponse(BaseModel):
     user: AuthUser
+
+
+class ActiveAdSession(BaseModel):
+    session_id: str
+    started_at: float
+    expires_at: float
+    seconds_left: int
+
+
+class TokenStatus(BaseModel):
+    """Баланс токенов и параметры rewarded-рекламы."""
+
+    tokens: int
+    calculation_cost: int
+    ad_reward: int
+    ad_duration_seconds: int
+    ad_cooldown_seconds: int
+    ad_daily_limit: int
+    ads_today: int
+    ads_remaining: int
+    cooldown_remaining_seconds: int
+    can_watch_ad: bool
+    active_ad_session: Optional[ActiveAdSession] = None
+
+
+class AdStartResponse(BaseModel):
+    session_id: str
+    reward: int
+    duration_seconds: int
+    started_at: float
+    expires_at: float
+    seconds_left: int
+    tokens: int
+    resumed: bool = False
+
+
+class AdCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(..., min_length=1, max_length=120)
+
+
+class AdCompleteResponse(BaseModel):
+    session_id: str
+    reward: int
+    tokens: int
+    ads_today: int
+    ads_remaining: int
 
 
 class AIContextRequest(BaseModel):

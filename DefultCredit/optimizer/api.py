@@ -39,6 +39,9 @@ from .models import (
     AIChatResponse,
     AIContextRequest,
     AIExplanation,
+    AdCompleteRequest,
+    AdCompleteResponse,
+    AdStartResponse,
     AuthLoginRequest,
     AuthMeResponse,
     AuthRegisterRequest,
@@ -51,6 +54,7 @@ from .models import (
     OptimizeResponse,
     PrepayVsInvestRequest,
     RentVsBuyRequest,
+    TokenStatus,
 )
 from .taxes import (
     annuity_payment,
@@ -86,7 +90,69 @@ def optimizer_health() -> Dict[str, object]:
             "mode": "email-password",
             "token_ttl_seconds": auth_service.TOKEN_TTL_SECONDS,
         },
+        "tokens": {
+            "calculation_cost": auth_service.CALCULATION_COST_TOKENS,
+            "ad_reward": auth_service.AD_REWARD_TOKENS,
+            "ad_duration_seconds": auth_service.AD_DURATION_SECONDS,
+            "ad_cooldown_seconds": auth_service.AD_COOLDOWN_SECONDS,
+            "ad_daily_limit": auth_service.AD_DAILY_LIMIT,
+            "earn_mode": "rewarded-ads-only",
+        },
     }
+
+
+def _token_http_error(exc: auth_service.TokenError) -> HTTPException:
+    """Превращает ошибки токен-экономики в HTTP с машинным кодом."""
+
+    if isinstance(exc, auth_service.InsufficientTokensError):
+        return HTTPException(
+            status_code=402,
+            detail={
+                "code": "insufficient_tokens",
+                "message": str(exc),
+                "required": exc.required,
+                "tokens": exc.balance,
+            },
+        )
+    if isinstance(exc, auth_service.AdCooldownError):
+        return HTTPException(
+            status_code=429,
+            detail={
+                "code": "ad_cooldown",
+                "message": str(exc),
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        )
+    if isinstance(exc, auth_service.AdLimitError):
+        return HTTPException(
+            status_code=429,
+            detail={
+                "code": "ad_daily_limit",
+                "message": str(exc),
+                "daily_limit": exc.limit,
+                "reset_in_seconds": exc.reset_in_seconds,
+            },
+            headers={"Retry-After": str(exc.reset_in_seconds)},
+        )
+    if isinstance(exc, auth_service.AdNotFinishedError):
+        return HTTPException(
+            status_code=409,
+            detail={
+                "code": "ad_not_finished",
+                "message": str(exc),
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+        )
+    if isinstance(exc, auth_service.AdSessionError):
+        return HTTPException(
+            status_code=409,
+            detail={"code": "ad_session_invalid", "message": str(exc)},
+        )
+    return HTTPException(
+        status_code=400,
+        detail={"code": "token_error", "message": str(exc)},
+    )
 
 
 @router.post(
@@ -155,6 +221,48 @@ def auth_logout(
         "status": "ok",
         "message": "Токен удаляется на клиенте; сервер его не хранит.",
     }
+
+
+@router.get(
+    "/tokens",
+    response_model=TokenStatus,
+    summary="Баланс токенов и условия rewarded-рекламы",
+)
+def tokens_status(
+    user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> TokenStatus:
+    return TokenStatus(**auth_service.token_status(user["id"]))
+
+
+@router.post(
+    "/tokens/ad/start",
+    response_model=AdStartResponse,
+    summary="Начать rewarded-рекламу",
+)
+def tokens_ad_start(
+    user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> AdStartResponse:
+    try:
+        return AdStartResponse(**auth_service.start_ad(user["id"]))
+    except auth_service.TokenError as exc:
+        raise _token_http_error(exc) from exc
+
+
+@router.post(
+    "/tokens/ad/complete",
+    response_model=AdCompleteResponse,
+    summary="Завершить rewarded-рекламу и получить токены",
+)
+def tokens_ad_complete(
+    request: AdCompleteRequest,
+    user: Dict[str, Any] = Depends(auth_service.current_user),
+) -> AdCompleteResponse:
+    try:
+        return AdCompleteResponse(
+            **auth_service.complete_ad(user["id"], request.session_id)
+        )
+    except auth_service.TokenError as exc:
+        raise _token_http_error(exc) from exc
 
 
 @router.get("/macro", response_model=MacroSnapshot, summary="Макросрез и источники")
@@ -281,7 +389,7 @@ def scenarios_preview(
 )
 def optimize_sync(
     request: OptimizeRequest,
-    _user: Dict[str, Any] = Depends(auth_service.current_user),
+    user: Dict[str, Any] = Depends(auth_service.current_user),
 ) -> OptimizeResponse:
     if request.options.monte_carlo_paths > SYNC_PATH_LIMIT:
         raise HTTPException(
@@ -292,9 +400,26 @@ def optimize_sync(
             ),
         )
     try:
+        charged = auth_service.spend_tokens(
+            user["id"],
+            auth_service.CALCULATION_COST_TOKENS,
+            kind="calculation",
+            meta="sync",
+        )
+    except auth_service.TokenError as exc:
+        raise _token_http_error(exc) from exc
+    try:
         return run_optimization(request)
     except ValueError as exc:
+        auth_service.refund_tokens(
+            user["id"], charged["spent"], meta="sync:validation_error"
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        auth_service.refund_tokens(
+            user["id"], charged["spent"], meta="sync:engine_error"
+        )
+        raise
 
 
 @router.post(
@@ -306,7 +431,26 @@ def optimize_async(
     request: OptimizeRequest,
     user: Dict[str, Any] = Depends(auth_service.current_user),
 ) -> Dict[str, object]:
-    job_id = JOBS.submit(request, user_id=user["id"])
+    try:
+        charged = auth_service.spend_tokens(
+            user["id"],
+            auth_service.CALCULATION_COST_TOKENS,
+            kind="calculation",
+            meta="async",
+        )
+    except auth_service.TokenError as exc:
+        raise _token_http_error(exc) from exc
+    try:
+        job_id = JOBS.submit(
+            request,
+            user_id=user["id"],
+            charged_tokens=charged["spent"],
+        )
+    except Exception:
+        auth_service.refund_tokens(
+            user["id"], charged["spent"], meta="async:submit_error"
+        )
+        raise
     estimated = max(
         2,
         int(
@@ -321,6 +465,8 @@ def optimize_async(
         "status": "queued",
         "poll_url": f"/api/v2/jobs/{job_id}",
         "estimated_seconds": estimated,
+        "charged_tokens": charged["spent"],
+        "tokens": charged["tokens"],
         "message": "Расчёт запущен. Опрашивайте статус по poll_url.",
     }
 

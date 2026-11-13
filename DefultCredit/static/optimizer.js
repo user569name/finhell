@@ -41,6 +41,12 @@
     toastTimer: null,
     lastPayload: null,
     authMode: "login",
+    tokenStatus: null,
+    adSession: null,
+    adTimer: null,
+    adCooldownTimer: null,
+    adBusy: false,
+    adReason: "",
   };
 
   // ---------------------------------------------------------------------
@@ -170,6 +176,8 @@
       email.textContent = value;
       wrap.hidden = !value;
     }
+    const chip = $("tokenChip");
+    if (chip) chip.hidden = !auth?.token;
   }
 
   function setAuthMode(mode) {
@@ -238,7 +246,7 @@
       saveAuth({ token: data.token, user: data.user });
       updateAuthUser();
       hideAuthGate();
-      await loadReference();
+      await Promise.all([loadReference(), refreshTokens()]);
       showToast(register ? "Аккаунт создан. Добро пожаловать!" : `С возвращением, ${data.user.email}.`);
     } catch (error) {
       setAuthError(error.message || "Не удалось войти. Проверьте email и пароль.");
@@ -271,11 +279,468 @@
       saveAuth({ token: auth.token, user: me.user });
       updateAuthUser();
       hideAuthGate();
-      await loadReference();
+      await Promise.all([loadReference(), refreshTokens()]);
     } catch (_error) {
       clearAuth();
       showAuthGate("Сессия истекла. Войдите снова.");
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // Токены и rewarded-реклама
+  // ---------------------------------------------------------------------
+  const TOKEN_WORDS = ["токен", "токена", "токенов"];
+
+  function tokenWord(value) {
+    const n = Math.abs(Math.trunc(Number(value) || 0)) % 100;
+    const n1 = n % 10;
+    if (n > 10 && n < 20) return TOKEN_WORDS[2];
+    if (n1 === 1) return TOKEN_WORDS[0];
+    if (n1 >= 2 && n1 <= 4) return TOKEN_WORDS[1];
+    return TOKEN_WORDS[2];
+  }
+
+  function setTokenBalance(balance) {
+    const safe = Math.max(0, Number(balance) || 0);
+    if (state.tokenStatus) state.tokenStatus.tokens = safe;
+    const value = $("tokenBalance");
+    if (value) value.textContent = nf0.format(safe);
+    const label = $("tokenBalanceLabel");
+    if (label) label.textContent = tokenWord(safe);
+    const adBalance = $("adBalance");
+    if (adBalance) adBalance.textContent = nf0.format(safe);
+    const chip = $("tokenChip");
+    if (chip && state.tokenStatus) {
+      chip.classList.toggle(
+        "is-empty",
+        safe < Number(state.tokenStatus.calculation_cost || 0),
+      );
+    }
+  }
+
+  function renderTokenStatus(status) {
+    if (!status) return;
+    state.tokenStatus = status;
+    const cost = Number(status.calculation_cost) || 0;
+    const reward = Number(status.ad_reward) || 0;
+    setTokenBalance(status.tokens);
+
+    const costEl = $("calcCost");
+    if (costEl) costEl.textContent = nf0.format(cost);
+    const costWord = $("calcCostWord");
+    if (costWord) costWord.textContent = tokenWord(cost);
+    const microCost = $("microCost");
+    if (microCost) microCost.textContent = nf0.format(cost);
+    const bannerCost = $("bannerCost");
+    if (bannerCost) bannerCost.textContent = nf0.format(cost);
+    const bannerReward = $("bannerReward");
+    if (bannerReward) bannerReward.textContent = nf0.format(reward);
+    const bannerBtn = $("bannerAdBtn");
+    if (bannerBtn) bannerBtn.textContent = `Смотреть рекламу +${nf0.format(reward)}`;
+    const adReward = $("adReward");
+    if (adReward) adReward.textContent = `+${nf0.format(reward)} ${tokenWord(reward)}`;
+    const adRemaining = $("adRemaining");
+    if (adRemaining) adRemaining.textContent = status.ads_remaining ?? "—";
+    applyAdAvailability(status);
+  }
+
+  async function refreshTokens() {
+    const auth = loadAuth();
+    if (!auth?.token) return null;
+    try {
+      const status = await api("/api/v2/tokens");
+      renderTokenStatus(status);
+      return status;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function stopAdCooldown() {
+    if (state.adCooldownTimer) {
+      window.clearInterval(state.adCooldownTimer);
+      state.adCooldownTimer = null;
+    }
+  }
+
+  function startAdCooldown(seconds) {
+    stopAdCooldown();
+    const button = $("adStartBtn");
+    const note = $("adNote");
+    let left = Math.max(0, Math.ceil(Number(seconds) || 0));
+    if (left <= 0) {
+      refreshTokens();
+      return;
+    }
+    const tick = () => {
+      if (left <= 0) {
+        stopAdCooldown();
+        refreshTokens();
+        return;
+      }
+      if (button) {
+        button.disabled = true;
+        button.textContent = `Подождите ${left} с`;
+      }
+      if (note) {
+        note.className = "micro ad-note";
+        note.textContent = `Следующая реклама будет доступна через ${left} с.`;
+      }
+      left -= 1;
+    };
+    tick();
+    state.adCooldownTimer = window.setInterval(tick, 1000);
+  }
+
+  function applyAdAvailability(status) {
+    if (!status || state.adBusy || state.adSession) return;
+    const button = $("adStartBtn");
+    const note = $("adNote");
+    if (!button) return;
+    const remaining = Number(status.ads_remaining ?? 1);
+    const cooldown = Number(status.cooldown_remaining_seconds ?? 0);
+    if (remaining <= 0) {
+      button.disabled = true;
+      button.textContent = "Лимит на сегодня";
+      if (note) {
+        note.className = "micro ad-note is-error";
+        note.textContent = "Дневной лимит рекламы исчерпан. Возвращайтесь после полуночи UTC.";
+      }
+      return;
+    }
+    if (cooldown > 0) {
+      startAdCooldown(cooldown);
+      return;
+    }
+    stopAdCooldown();
+    button.disabled = false;
+    button.textContent = "Смотреть рекламу";
+    if (note) {
+      note.className = "micro ad-note";
+      note.textContent = `Реклама длится ${status.ad_duration_seconds ?? 15} секунд. Награда начисляется только после полного просмотра.`;
+    }
+  }
+
+  function resetAdStage() {
+    if (state.adTimer) {
+      window.clearInterval(state.adTimer);
+      state.adTimer = null;
+    }
+    state.adSession = null;
+    const stage = $("adStage");
+    if (stage) stage.classList.remove("playing", "ready", "claimed");
+    const timer = $("adTimer");
+    if (timer) {
+      timer.hidden = true;
+      timer.textContent = "";
+    }
+    const bar = $("adProgressBar");
+    if (bar) bar.style.width = "0%";
+    const button = $("adStartBtn");
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Смотреть рекламу";
+    }
+    const note = $("adNote");
+    if (note) {
+      note.className = "micro ad-note";
+      if (state.tokenStatus) {
+        note.textContent = `Реклама длится ${state.tokenStatus.ad_duration_seconds} секунд. Награда начисляется только после полного просмотра.`;
+      }
+    }
+    applyAdAvailability(state.tokenStatus || { ads_remaining: 1 });
+  }
+
+  function setAdReady() {
+    if (state.adSession) state.adSession.ready = true;
+    const stage = $("adStage");
+    if (stage) {
+      stage.classList.remove("playing");
+      stage.classList.add("ready");
+    }
+    const timer = $("adTimer");
+    if (timer) {
+      timer.hidden = false;
+      timer.textContent = "✓";
+    }
+    const bar = $("adProgressBar");
+    if (bar) bar.style.width = "100%";
+    const button = $("adStartBtn");
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Получить награду";
+    }
+    const note = $("adNote");
+    if (note) {
+      note.className = "micro ad-note is-success";
+      note.textContent = "Реклама просмотрена. Заберите токены.";
+    }
+  }
+
+  function startAdCountdown(seconds, duration) {
+    if (state.adTimer) {
+      window.clearInterval(state.adTimer);
+      state.adTimer = null;
+    }
+    const stage = $("adStage");
+    const timer = $("adTimer");
+    const bar = $("adProgressBar");
+    const button = $("adStartBtn");
+    const note = $("adNote");
+    const total = Math.max(1, Number(duration) || Number(seconds) || 1);
+    let left = Math.max(0, Math.ceil(Number(seconds) || 0));
+    if (stage) {
+      stage.classList.remove("ready", "claimed");
+      stage.classList.add("playing");
+    }
+    if (timer) timer.hidden = false;
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Идёт показ…";
+    }
+    if (note) {
+      note.className = "micro ad-note";
+      note.textContent = "Реклама идёт. Не закрывайте окно до конца показа.";
+    }
+    const render = () => {
+      const safeLeft = Math.max(0, left);
+      if (timer) timer.textContent = String(safeLeft);
+      if (bar) {
+        bar.style.width = `${Math.min(100, ((total - safeLeft) / total) * 100)}%`;
+      }
+    };
+    render();
+    if (left <= 0) {
+      setAdReady();
+      return;
+    }
+    const deadline = Date.now() + left * 1000;
+    state.adTimer = window.setInterval(() => {
+      left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      render();
+      if (left <= 0) {
+        window.clearInterval(state.adTimer);
+        state.adTimer = null;
+        setAdReady();
+      }
+    }, 200);
+  }
+
+  function resumeAdSession(active, status) {
+    if (!active?.session_id) return;
+    const reward = Number(status?.ad_reward ?? 5);
+    const left = Math.max(0, Number(active.seconds_left ?? 0));
+    if (left <= 0) {
+      state.adSession = { session_id: active.session_id, reward, ready: true };
+      setAdReady();
+    } else {
+      state.adSession = { session_id: active.session_id, reward, ready: false };
+      startAdCountdown(left, status?.ad_duration_seconds || left);
+    }
+  }
+
+  async function beginAd() {
+    if (state.adBusy) return;
+    if (state.adSession?.ready) {
+      await claimAd();
+      return;
+    }
+    if (state.adSession) return;
+    state.adBusy = true;
+    const button = $("adStartBtn");
+    const note = $("adNote");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Запускаем…";
+    }
+    if (note) {
+      note.className = "micro ad-note";
+      note.textContent = "Запрашиваем рекламу…";
+    }
+    try {
+      const session = await api("/api/v2/tokens/ad/start", { method: "POST" });
+      state.adSession = {
+        session_id: session.session_id,
+        reward: session.reward,
+        ready: false,
+      };
+      setTokenBalance(session.tokens);
+      if (Number(session.seconds_left) <= 0) {
+        setAdReady();
+      } else {
+        startAdCountdown(session.seconds_left, session.duration_seconds);
+      }
+    } catch (error) {
+      state.adSession = null;
+      const code = error.detail?.code;
+      if (code === "ad_cooldown") {
+        startAdCooldown(error.detail?.retry_after_seconds || 30);
+        showToast(error.message, true);
+      } else if (code === "ad_daily_limit") {
+        if (note) {
+          note.className = "micro ad-note is-error";
+          note.textContent = error.message;
+        }
+        if (button) {
+          button.disabled = true;
+          button.textContent = "Лимит на сегодня";
+        }
+      } else {
+        if (note) {
+          note.className = "micro ad-note is-error";
+          note.textContent = error.message;
+        }
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Смотреть рекламу";
+        }
+        showToast(error.message, true);
+      }
+      refreshTokens();
+    } finally {
+      state.adBusy = false;
+    }
+  }
+
+  async function claimAd() {
+    if (state.adBusy || !state.adSession?.session_id) return;
+    state.adBusy = true;
+    const button = $("adStartBtn");
+    const note = $("adNote");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Начисляем…";
+    }
+    try {
+      const result = await api("/api/v2/tokens/ad/complete", {
+        method: "POST",
+        body: JSON.stringify({ session_id: state.adSession.session_id }),
+      });
+      setTokenBalance(result.tokens);
+      state.adSession = {
+        session_id: state.adSession.session_id,
+        reward: result.reward,
+        ready: false,
+        claimed: true,
+      };
+      const stage = $("adStage");
+      if (stage) {
+        stage.classList.remove("playing", "ready");
+        stage.classList.add("claimed");
+      }
+      const timer = $("adTimer");
+      if (timer) {
+        timer.hidden = false;
+        timer.textContent = "✓";
+      }
+      if (button) {
+        button.disabled = true;
+        button.textContent = `+${nf0.format(result.reward)} ${tokenWord(result.reward)}`;
+      }
+      if (note) {
+        note.className = "micro ad-note is-success";
+        note.textContent = `Готово! Начислено ${nf0.format(result.reward)} ${tokenWord(result.reward)}. Баланс: ${nf0.format(result.tokens)}.`;
+      }
+      showToast(
+        `+${nf0.format(result.reward)} ${tokenWord(result.reward)}. Теперь доступно расчётов: ${Math.floor(result.tokens / Math.max(1, state.tokenStatus?.calculation_cost || 1))}.`,
+      );
+      await refreshTokens();
+      window.setTimeout(() => {
+        if ($("adModal") && !$("adModal").hidden) closeAdModal();
+        resetAdStage();
+      }, 1400);
+    } catch (error) {
+      if (error.detail?.code === "ad_not_finished") {
+        const wait = Number(error.detail?.retry_after_seconds) || 1;
+        if (state.adSession) {
+          state.adSession.ready = false;
+          startAdCountdown(
+            wait,
+            Math.max(wait, state.tokenStatus?.ad_duration_seconds || wait),
+          );
+        }
+      } else {
+        state.adSession = null;
+        if (note) {
+          note.className = "micro ad-note is-error";
+          note.textContent = error.message;
+        }
+        showToast(error.message, true);
+        await refreshTokens();
+        resetAdStage();
+      }
+    } finally {
+      state.adBusy = false;
+    }
+  }
+
+  function openAdModal(reason = "") {
+    const modal = $("adModal");
+    if (!modal) return;
+    state.adReason = reason || "";
+    stopAdCooldown();
+    resetAdStage();
+    modal.hidden = false;
+    document.body.classList.add("ad-locked");
+    const title = $("adTitle");
+    const subtitle = $("adSubtitle");
+    if (reason === "insufficient") {
+      if (title) title.textContent = "Для расчёта нужен токен";
+      if (subtitle) {
+        subtitle.textContent = "Посмотрите короткую рекламу — начислим токены, и расчёт станет доступен.";
+      }
+    } else {
+      if (title) title.textContent = "Токены за просмотр рекламы";
+      if (subtitle) {
+        subtitle.textContent = "Досмотрите рекламу до конца — награда начислится автоматически.";
+      }
+    }
+    refreshTokens().then((status) => {
+      if (!status) return;
+      if (status.active_ad_session) {
+        resumeAdSession(status.active_ad_session, status);
+      } else {
+        applyAdAvailability(status);
+      }
+    });
+  }
+
+  function closeAdModal() {
+    const modal = $("adModal");
+    if (modal) modal.hidden = true;
+    document.body.classList.remove("ad-locked");
+    if (state.adTimer) {
+      window.clearInterval(state.adTimer);
+      state.adTimer = null;
+    }
+    stopAdCooldown();
+  }
+
+  function bindTokenEvents() {
+    ["tokenChip", "earnTokensBtn", "bannerAdBtn"].forEach((id) => {
+      const element = $(id);
+      if (element) element.addEventListener("click", () => openAdModal());
+    });
+    const start = $("adStartBtn");
+    if (start) {
+      start.addEventListener("click", () => {
+        if (state.adSession?.ready) claimAd();
+        else beginAd();
+      });
+    }
+    const close = $("adClose");
+    if (close) close.addEventListener("click", closeAdModal);
+    const modal = $("adModal");
+    if (modal) {
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeAdModal();
+      });
+    }
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && $("adModal") && !$("adModal").hidden) {
+        closeAdModal();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -303,7 +768,13 @@
       } catch (_) {
         // ignore
       }
-      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      const message = typeof detail === "string"
+        ? detail
+        : detail?.message || JSON.stringify(detail);
+      const error = new Error(message);
+      error.status = response.status;
+      error.detail = detail;
+      throw error;
     }
     return response.json();
   }
@@ -493,6 +964,7 @@
       method: "POST",
       body: JSON.stringify(payload),
     });
+    refreshTokens();
     let polls = 0;
     while (polls < 900) {
       await sleep(900);
@@ -500,6 +972,7 @@
       updateProgress(job.progress, job.message);
       if (job.status === "done") {
         if (!job.result) throw new Error("Задание завершилось без результата.");
+        await refreshTokens();
         return job.result;
       }
       if (job.status === "error") {
@@ -1243,17 +1716,37 @@
     $("optimizerForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       if (state.busy) return;
+      const cost = Number(state.tokenStatus?.calculation_cost ?? 1);
+      if (state.tokenStatus && state.tokenStatus.tokens < cost) {
+        openAdModal("insufficient");
+        showToast("Сначала получите токены за просмотр рекламы.", true);
+        return;
+      }
       const payload = buildPayload();
       if (!payload) return;
       setBusy(true);
       try {
         const result = await runOptimization(payload);
         renderResult(result);
-        showToast("Расчёт готов. Три уровня риска и стресс-тесты обновлены.");
+        showToast(
+          `Расчёт готов. Списано ${nf0.format(cost)} ${tokenWord(cost)}. Три уровня риска и стресс-тесты обновлены.`,
+        );
         window.setTimeout(() => {
           $("results").scrollIntoView({ behavior: "smooth", block: "start" });
         }, 120);
       } catch (error) {
+        if (error.status === 402) {
+          await refreshTokens();
+          $("progressCard").hidden = true;
+          if (state.result) {
+            $("resultsContent").hidden = false;
+          } else {
+            $("emptyState").hidden = false;
+          }
+          openAdModal("insufficient");
+          showToast("Недостаточно токенов. Посмотрите рекламу — начислим токены.", true);
+          return;
+        }
         showToast(`Ошибка расчёта: ${error.message}`, true);
         $("progressCard").hidden = true;
         if (state.result) {
@@ -1261,6 +1754,7 @@
         } else {
           $("emptyState").hidden = false;
         }
+        await refreshTokens();
       } finally {
         setBusy(false);
       }
@@ -1370,6 +1864,7 @@
     setTheme(preferred);
     bindEvents();
     bindAuthEvents();
+    bindTokenEvents();
     updateAuthUser();
     await initAuth();
   }

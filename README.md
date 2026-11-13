@@ -38,6 +38,11 @@
 `DefultCredit/data/auth_secret`. Для production задайте `FINHELL_AUTH_SECRET`,
 `FINHELL_DB_PATH` и `FINHELL_TOKEN_TTL_SECONDS`.
 
+Параметры токен-экономики переопределяются через окружение:
+`FINHELL_CALCULATION_COST_TOKENS` (по умолчанию 1),
+`FINHELL_AD_REWARD_TOKENS` (5), `FINHELL_AD_DURATION_SECONDS` (15),
+`FINHELL_AD_COOLDOWN_SECONDS` (30) и `FINHELL_AD_DAILY_LIMIT` (20).
+
 ## Что умеет v2
 
 - **Вход:** капитал, взнос, горизонт 1–600 месяцев, риск-профиль, ликвидность,
@@ -62,6 +67,11 @@
   SQLite только как PBKDF2-HMAC-SHA256 хеши (210 000 итераций, индивидуальная
   соль), токен — HMAC-SHA256 подпись со сроком 30 дней. Расчёты, задания и
   AI-методы доступны только после входа.
+- **Токены и реклама:** каждый расчёт стоит 1 токен. Токены нельзя купить —
+  только получить за rewarded-рекламу: 5 токенов за 15-секундный ролик,
+  кулдаун 30 секунд, лимит 20 просмотров в день. Баланс, история операций и
+  сессии рекламы хранятся в SQLite; начисление проверяет сервер. При нулевом
+  балансе API отвечает 402, а интерфейс открывает окно рекламы.
 - **UI:** Sber-style, зелёный/белый/почти чёрный, светлая и тёмная темы,
   адаптивная вёрстка, графики и модалки.
 
@@ -81,7 +91,7 @@ DefultCredit/
 │   └── optimizer.js          фронтенд v2
 ├── optimizer/
 │   ├── models.py             Pydantic-модели
-│   ├── auth.py               email-авторизация, PBKDF2, HMAC-токены
+│   ├── auth.py               email-авторизация, PBKDF2, HMAC, токен-экономика
 │   ├── market_data.py        ЦБ РФ, MOEX ISS, кэш, fallback
 │   ├── instruments.py        активы, сценарии, портфельные метрики
 │   ├── taxes.py              НДФЛ, ИИС, аннуитет, NPV/IRR
@@ -101,16 +111,20 @@ mobile/                       Flutter-клиент Android (APK в Releases)
 ## Android APK
 
 Готовый release APK:
-[Finhell-v0.2.0.apk](https://github.com/user569name/finhell/releases/download/v0.2.0/Finhell-v0.2.0.apk)
+[Finhell-v0.3.0.apk](https://github.com/user569name/finhell/releases/download/v0.3.0/Finhell-v0.3.0.apk)
 (~50 МБ, package `ru.finhell.finhell`, minSdk 24, targetSdk 36). Собирается
 в GitHub Actions workflow `.github/workflows/android-apk.yml`. При первом
 запуске приложение попросит зарегистрироваться по email или войти.
+
+В шапке приложения виден баланс токенов. Нажмите на него, чтобы посмотреть
+рекламу и получить токены; расчёт списывает 1 токен. Баннерный слот и
+rewarded-окно размечены как точки интеграции AdMob / Yandex Mobile Ads.
 
 ```powershell
 adb install -r Finhell-release.apk
 ```
 
-Адрес API меняется прямо в приложении (иконка сервера в шапке): для эмулятора —
+Адрес API меняется в меню аккаунта («Адрес сервера»): для эмулятора —
 `http://10.0.2.2:8002`, для телефона — `http://<IP-компьютера>:8002`.
 
 ## API v2
@@ -130,6 +144,30 @@ curl -X POST http://127.0.0.1:8002/api/v2/auth/login \
 Дальше передавайте токен в заголовке `Authorization: Bearer <token>`.
 Публично доступны `/api/v2/health`, `/macro`, `/instruments`, `/scenarios` и
 `/compare/*`; расчёты, задания и AI требуют входа.
+
+### Токены и rewarded-реклама
+
+```bash
+# баланс, стоимость расчёта и условия рекламы
+curl http://127.0.0.1:8002/api/v2/tokens \
+  -H "Authorization: Bearer <token>"
+
+# старт показа: создаёт сессию на 15 секунд
+curl -X POST http://127.0.0.1:8002/api/v2/tokens/ad/start \
+  -H "Authorization: Bearer <token>"
+
+# начисление после полного просмотра
+curl -X POST http://127.0.0.1:8002/api/v2/tokens/ad/complete \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"session_id": "ad_..."}'
+```
+
+Награда начисляется только если с момента старта прошло не меньше
+`FINHELL_AD_DURATION_SECONDS`. Повторный запрос награды за ту же сессию
+отклоняется, кулдаун и дневной лимит проверяются на сервере. Если токенов
+не хватает, `/optimize` и `/optimize/async` возвращают **402** с кодом
+`insufficient_tokens`; при ошибке фонового задания списание возвращается.
 
 ```bash
 # макросрез (публично)
@@ -167,9 +205,10 @@ curl http://127.0.0.1:8002/api/v2/jobs/<job_id> \
 .\myvenv\Scripts\python.exe -m unittest discover -s DefultCredit/tests -v
 ```
 
-69 тестов: налоги, аннуитеты, NPV/IRR, каталог инструментов, сценарии,
+78 тестов: налоги, аннуитеты, NPV/IRR, каталог инструментов, сценарии,
 ликвидность, ипотека, Монте-Карло, стресс-тесты, ранжирование, AI-валидатор,
-чат, парсер MOEX, v1-симулятор, регистрация/вход и защита API.
+чат, парсер MOEX, v1-симулятор, регистрация/вход, защита API и токен-экономика
+(списание, возврат, кулдаун, лимит и начисление за рекламу).
 
 ## Ограничения
 

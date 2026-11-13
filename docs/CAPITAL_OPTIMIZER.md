@@ -25,9 +25,10 @@ AI-объяснениями и Sber-style интерфейсом.
 | AI-объяснения и чат | работает в шаблонном режиме; LLM — опционально | `optimizer/ai.py` |
 | Фоновые задания | работает | `optimizer/jobs.py` |
 | Авторизация по email | регистрация, вход, PBKDF2, HMAC-токены | `optimizer/auth.py` |
+| Токен-экономика и rewarded-реклама | 1 токен за расчёт, 5 за ролик, кулдаун и лимит на сервере | `optimizer/auth.py`, `optimizer/api.py` |
 | Sber-style веб-интерфейс | работает | `templates/optimizer.html`, `static/optimizer.css`, `static/optimizer.js` |
-| Flutter-клиент | вход, форма, результаты, графики, AI-чат; собирается в GitHub Actions | `mobile/` |
-| Тесты | 69 тестов, все проходят | `DefultCredit/tests/` |
+| Flutter-клиент | вход, форма, токены, результаты, графики, AI-чат; собирается в GitHub Actions | `mobile/` |
+| Тесты | 78 тестов, все проходят | `DefultCredit/tests/` |
 
 ### Осознанные ограничения текущего стенда
 
@@ -496,6 +497,11 @@ LLM **не считает**. Расчётный движок формирует 
 - **Stress selector** — переключение сценария, таблица шоков.
 - **AI panel** — summary, три чипа риска, шаги, «почему так», риски.
 - **Chat** — подсказки, история, индикатор набора, ограничение длины.
+- **Token chip** — баланс в шапке, по клику открывает rewarded-окно.
+- **Token card** — баланс, стоимость расчёта, кнопка «Смотреть рекламу +5»,
+  счётчик просмотров за день.
+- **Ad banner slot** — размеченный баннерный слот (AdMob / Yandex Ads).
+- **Rewarded modal** — таймер 15 с, прогресс, награда, кулдаун, дневной лимит.
 - **Toast** — ошибки и статусы, не блокирует интерфейс.
 
 ---
@@ -512,15 +518,22 @@ LLM **не считает**. Расчётный движок формирует 
   AI-объяснение и чат;
 - `lib/widgets/fan_chart.dart`, `histogram_chart.dart` — графики на `fl_chart`;
 - `lib/widgets/risk_card.dart` — карточка уровня риска и мини-состав портфеля;
+- `lib/widgets/rewarded_ad_dialog.dart` — rewarded-реклама: старт, таймер,
+  начисление, кулдаун и дневной лимит;
+- `lib/widgets/ad_banner_slot.dart` — баннерный слот с точкой интеграции
+  AdMob / Yandex Mobile Ads;
 - `lib/widgets/ai_chat.dart` — чат по `context_id` с историей;
-- `lib/services/api_client.dart` — асинхронный расчёт, polling заданий и
-  Bearer-токен;
+- `lib/models/token_models.dart` — баланс, сессии и результаты начисления;
+- `lib/services/api_client.dart` — асинхронный расчёт, polling заданий,
+  Bearer-токен и токен-экономика;
 - `lib/services/auth_store.dart` — сохранение токена и адреса сервера;
 - `lib/theme/sber_theme.dart` — светлая и тёмная темы.
 
 При запуске приложение восстанавливает сессию, проверяет токен через
-`/api/v2/auth/me` и показывает экран входа, если сессии нет. Выход — в меню
-аккаунта в шапке.
+`/api/v2/auth/me`, загружает баланс через `/api/v2/tokens` и показывает
+экран входа, если сессии нет. Выход — в меню аккаунта в шапке. При нехватке
+токенов кнопка расчёта и ответ 402 открывают rewarded-окно; после начисления
+баланс обновляется, после расчёта — уменьшается на стоимость.
 
 Запуск:
 
@@ -566,8 +579,52 @@ curl http://127.0.0.1:8002/api/v2/auth/me \
 "expires_in": 2592000, "user": {...}}`. Токен — HMAC-SHA256 подпись,
 действует 30 дней. Пароли хранятся в SQLite как PBKDF2-HMAC-SHA256
 (210 000 итераций, случайная соль). Публичные маршруты: `health`, `macro`,
-`instruments`, `scenarios`, `compare/*`; `optimize`, `jobs`, `ai` требуют
-заголовок `Authorization: Bearer <token>`. Задания видны только их владельцу.
+`instruments`, `scenarios`, `compare/*`; `optimize`, `jobs`, `ai`, `tokens`
+требуют заголовок `Authorization: Bearer <token>`. Задания видны только их
+владельцу.
+
+### Токены и rewarded-реклама
+
+Экономика хранится в тех же SQLite-таблицах, что и пользователи:
+
+- `users.tokens` — текущий баланс;
+- `token_transactions` — журнал начислений, списаний и возвратов;
+- `ad_sessions` — сессии показа: `started` → `completed` / `expired`.
+
+```bash
+# статус: баланс, стоимость расчёта, кулдаун, дневной лимит
+curl http://127.0.0.1:8002/api/v2/tokens \
+  -H "Authorization: Bearer <token>"
+
+# старт (или возобновление) rewarded-сессии
+curl -X POST http://127.0.0.1:8002/api/v2/tokens/ad/start \
+  -H "Authorization: Bearer <token>"
+
+# начисление после полного просмотра
+curl -X POST http://127.0.0.1:8002/api/v2/tokens/ad/complete \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"session_id": "ad_..."}'
+```
+
+Правила по умолчанию: расчёт — 1 токен, ролик — 15 секунд и 5 токенов,
+кулдаун 30 секунд, лимит 20 роликов в сутки, стартового бонуса нет. Награда
+начисляется только после `AD_DURATION_SECONDS` с момента старта; повторное
+начисление за ту же сессию, кулдаун и лимит проверяются сервером. Ошибки
+возвращаются структурированно:
+
+| HTTP | `detail.code` | Когда |
+|---:|---|---|
+| 402 | `insufficient_tokens` | на балансе меньше стоимости расчёта |
+| 429 | `ad_cooldown` | не прошёл кулдаун, есть `retry_after_seconds` |
+| 429 | `ad_daily_limit` | исчерпан дневной лимит |
+| 409 | `ad_not_finished` | ролик ещё не досмотрен |
+| 409 | `ad_session_invalid` | сессия не найдена/истекла/уже использована |
+
+`/optimize` и `/optimize/async` списывают токен при постановке в очередь;
+синхронный расчёт возвращает токен при ошибке валидации/движка, асинхронное
+задание — при переходе в `error`. AI-объяснение и чат входят в стоимость
+расчёта и отдельно не списываются.
 
 ### Health
 
@@ -701,9 +758,11 @@ NumPy/SciPy или векторизовать по путям.
 - парсер MOEX ISS и макросрез;
 - регистрация, вход, валидация, истечение и подделка токена;
 - защита расчётов, AI и заданий, изоляция заданий по пользователю;
+- токен-экономика: списание, 402, возврат при ошибке, старт/начисление
+  рекламы, кулдаун, дневной лимит и повторное начисление;
 - 22 теста v1-симулятора.
 
-Итог: **69 тестов, все проходят** (~8 секунд).
+Итог: **78 тестов, все проходят** (~5 секунд).
 
 ---
 
@@ -726,6 +785,11 @@ OPTIMIZER_JOB_WORKERS=2
 FINHELL_AUTH_SECRET=<случайная строка 32+ байта>
 FINHELL_DB_PATH=/var/lib/finhell/finhell.db
 FINHELL_TOKEN_TTL_SECONDS=2592000
+FINHELL_CALCULATION_COST_TOKENS=1
+FINHELL_AD_REWARD_TOKENS=5
+FINHELL_AD_DURATION_SECONDS=15
+FINHELL_AD_COOLDOWN_SECONDS=30
+FINHELL_AD_DAILY_LIMIT=20
 LLM_PROVIDER=
 LLM_API_KEY=
 LLM_BASE_URL=
