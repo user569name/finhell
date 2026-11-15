@@ -33,7 +33,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   int _tab = 0;
+  int _calcIndex = 0;
 
   final _capital = TextEditingController(text: '500000');
   final _monthly = TextEditingController(text: '20000');
@@ -301,10 +303,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: _calculatorDrawer(theme),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        titleSpacing: 20,
+        leading: IconButton(
+          tooltip: 'Калькуляторы',
+          icon: const Icon(Icons.menu),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+        titleSpacing: 8,
         title: Row(
           children: [
             Container(
@@ -642,7 +651,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          const CalculatorsScreen(),
+          CalculatorsScreen(
+            selectedIndex: _calcIndex,
+            onTabChanged: (index) {
+              if (_calcIndex != index) {
+                setState(() => _calcIndex = index);
+              }
+            },
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -667,6 +683,192 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Калькуляторы',
           ),
         ],
+      ),
+    );
+  }
+
+  void _openCalculator(int index) {
+    _scaffoldKey.currentState?.closeDrawer();
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _tab = 1;
+      _calcIndex = index;
+    });
+  }
+
+  Widget _calculatorDrawer(ThemeData theme) {
+    final width = MediaQuery.sizeOf(context).width * 0.5;
+    return Drawer(
+      width: width,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(22)),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 14, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          color: SberColors.green.withOpacity(0.14),
+                        ),
+                        child: const Icon(
+                          Icons.calculate_outlined,
+                          size: 18,
+                          color: SberColors.green,
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'Калькуляторы',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Бесплатно · без токенов',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(
+              height: 1,
+              indent: 14,
+              endIndent: 14,
+              color: theme.colorScheme.outlineVariant.withOpacity(0.6),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+                children: [
+                  _drawerTile(
+                    theme,
+                    index: 4,
+                    icon: Icons.apartment_outlined,
+                    label: 'Калькулятор Ипотеки',
+                  ),
+                  _drawerTile(
+                    theme,
+                    index: 5,
+                    icon: Icons.request_quote_outlined,
+                    label: 'Калькулятор кредита',
+                  ),
+                  _drawerTile(
+                    theme,
+                    index: 0,
+                    icon: Icons.savings_outlined,
+                    label: 'Калькулятор Вклада',
+                  ),
+                  _drawerTile(
+                    theme,
+                    index: 1,
+                    icon: Icons.account_balance_outlined,
+                    label: 'Калькулятор ОФЗ',
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                    child: Text(
+                      'ЕЩЁ',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  _drawerTile(
+                    theme,
+                    index: 2,
+                    icon: Icons.business_center_outlined,
+                    label: 'Облигации',
+                  ),
+                  _drawerTile(
+                    theme,
+                    index: 3,
+                    icon: Icons.home_work_outlined,
+                    label: 'Недвижимость',
+                  ),
+                  _drawerTile(
+                    theme,
+                    index: 6,
+                    icon: Icons.trending_down,
+                    label: 'Инфляция',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerTile(
+    ThemeData theme, {
+    required int index,
+    required IconData icon,
+    required String label,
+  }) {
+    final selected = _tab == 1 && _calcIndex == index;
+    final dark = theme.brightness == Brightness.dark;
+    final accent = SberColors.green;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Material(
+        color: selected
+            ? accent.withOpacity(dark ? 0.22 : 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _openCalculator(index),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: selected ? accent : theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.2,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: selected ? accent : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

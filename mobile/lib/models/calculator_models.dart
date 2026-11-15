@@ -722,6 +722,181 @@ MortgageResult calculateMortgage({
 }
 
 // ---------------------------------------------------------------------------
+// Потребительский кредит
+// ---------------------------------------------------------------------------
+
+class CreditResult {
+  const CreditResult({
+    required this.principal,
+    required this.monthlyPayment,
+    required this.firstPayment,
+    required this.lastPayment,
+    required this.totalPayments,
+    required this.totalInterest,
+    required this.commission,
+    required this.insurance,
+    required this.totalCost,
+    required this.overpaymentRate,
+    required this.realCost,
+    required this.inflationSaving,
+    required this.realOverpayment,
+    required this.realRate,
+    required this.taxes,
+    required this.inflation,
+  });
+
+  final double principal;
+  final double monthlyPayment;
+  final double firstPayment;
+  final double lastPayment;
+  final double totalPayments;
+  final double totalInterest;
+  final double commission;
+  final double insurance;
+  final double totalCost;
+  final double overpaymentRate;
+  final double realCost;
+  final double inflationSaving;
+  final double realOverpayment;
+  final double realRate;
+  final TaxBreakdown taxes;
+  final InflationBreakdown inflation;
+}
+
+CreditResult calculateCredit({
+  required double amount,
+  required double annualRatePercent,
+  required int years,
+  required bool annuity,
+  required double commissionPercent,
+  required double insurancePercent,
+  required double inflationPercent,
+}) {
+  final safeYears = math.max(1, years);
+  final months = safeYears * 12;
+  final principal = math.max(0.0, amount);
+  final monthlyRate = annualRatePercent / 100 / 12;
+  final inflation = inflationPercent / 100;
+
+  double payment;
+  double firstPayment;
+  double lastPayment;
+  double totalInterest;
+
+  if (principal <= 0) {
+    payment = 0;
+    firstPayment = 0;
+    lastPayment = 0;
+    totalInterest = 0;
+  } else if (annuity) {
+    if (monthlyRate <= 0) {
+      payment = principal / months;
+    } else {
+      final factor = math.pow(1 + monthlyRate, months).toDouble();
+      payment = principal * monthlyRate * factor / (factor - 1);
+    }
+    firstPayment = payment;
+    lastPayment = payment;
+    totalInterest = payment * months - principal;
+  } else {
+    final principalPart = principal / months;
+    firstPayment = principalPart + principal * monthlyRate;
+    lastPayment = principalPart + principalPart * monthlyRate;
+    totalInterest = principal * monthlyRate * (months + 1) / 2;
+    payment = firstPayment;
+  }
+
+  final totalPayments = principal + totalInterest;
+  final commission = principal * (commissionPercent / 100);
+  final insurance = principal * (insurancePercent / 100) * safeYears;
+  final totalCost = totalPayments + commission + insurance;
+  final overpaymentRate = _safeDiv(totalCost - principal, principal);
+
+  final monthlyInflation = math.pow(1 + inflation, 1 / 12).toDouble() - 1;
+  final insuranceMonthly = principal * (insurancePercent / 100) / 12;
+  var realCost = commission;
+  if (principal > 0) {
+    if (annuity) {
+      final stream = payment + insuranceMonthly;
+      realCost += monthlyInflation == 0
+          ? stream * months
+          : stream *
+                (1 - math.pow(1 + monthlyInflation, -months).toDouble()) /
+                monthlyInflation;
+    } else {
+      final principalPart = principal / months;
+      var balance = principal;
+      for (var month = 1; month <= months; month++) {
+        final interest = balance * monthlyRate;
+        final currentPayment = principalPart + interest + insuranceMonthly;
+        realCost +=
+            currentPayment / math.pow(1 + monthlyInflation, month).toDouble();
+        balance -= principalPart;
+      }
+    }
+  }
+
+  final inflationSaving = totalCost - realCost;
+  final realOverpayment = realCost - principal;
+  final realRate = (1 + annualRatePercent / 100) / (1 + inflation) - 1;
+
+  final taxes = TaxBreakdown(
+    total: 0,
+    rows: [
+      const CalcRow('НДФЛ с кредита', 0),
+      const CalcRow(
+        'Вычет по процентам',
+        0,
+        note: 'Предусмотрен только для ипотеки',
+      ),
+    ],
+    note:
+        'Потребительский кредит не облагается НДФЛ: это не доход. '
+        'Проценты, комиссия и страховка не уменьшают налоговую базу. '
+        'Вычет по процентам доступен только по ипотеке.',
+  );
+
+  final inflationBlock = InflationBreakdown(
+    futureCost: totalCost,
+    realValue: realCost,
+    loss: inflationSaving,
+    realAnnualReturn: realRate,
+    benefit: inflationSaving,
+    realLabel: 'Реальная ставка',
+    rows: [
+      CalcRow('Всего к возврату с комиссией', totalCost),
+      CalcRow('В сегодняшних деньгах', realCost),
+      CalcRow('Обесценивание платежей инфляцией', inflationSaving),
+      CalcRow('Реальная переплата', realOverpayment),
+      CalcRow('Ставка минус инфляция', realRate, percent: true),
+    ],
+    note:
+        'Инфляция снижает реальную нагрузку на платежи. '
+        'Стоимость в сегодняшних деньгах рассчитана по месячной инфляции '
+        'с учётом комиссии и страховки.',
+  );
+
+  return CreditResult(
+    principal: principal,
+    monthlyPayment: payment,
+    firstPayment: firstPayment,
+    lastPayment: lastPayment,
+    totalPayments: totalPayments,
+    totalInterest: totalInterest,
+    commission: commission,
+    insurance: insurance,
+    totalCost: totalCost,
+    overpaymentRate: overpaymentRate,
+    realCost: realCost,
+    inflationSaving: inflationSaving,
+    realOverpayment: realOverpayment,
+    realRate: realRate,
+    taxes: taxes,
+    inflation: inflationBlock,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Инфляция
 // ---------------------------------------------------------------------------
 

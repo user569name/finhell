@@ -115,16 +115,17 @@ mobile/                       Flutter-клиент Android (APK в Releases)
 ## Android APK
 
 Готовый release APK:
-[Finhell-v0.4.0.apk](https://github.com/user569name/finhell/releases/download/v0.4.0/Finhell-v0.4.0.apk)
-(~50 МБ, package `ru.finhell.finhell`, minSdk 24, targetSdk 36). Собирается
+[Finhell-v0.5.0.apk](https://github.com/user569name/finhell/releases/download/v0.5.0/Finhell-v0.5.0.apk)
+(~54 МБ, package `ru.finhell.finhell`, minSdk 24, targetSdk 36). Собирается
 в GitHub Actions workflow `.github/workflows/android-apk.yml`. При первом
 запуске приложение попросит зарегистрироваться по email или войти.
 
 В шапке приложения виден баланс токенов. Нажмите на него, чтобы посмотреть
 рекламу и получить токены; расчёт списывает 1 токен. Баннерный слот и
 rewarded-окно размечены как точки интеграции AdMob / Yandex Mobile Ads.
-Нижняя навигация открывает бесплатные калькуляторы: вклад, ОФЗ, облигации,
-недвижимость, ипотеку и инфляцию.
+Нижняя навигация открывает бесплатные калькуляторы. Кнопка меню слева сверху
+выдвигает панель на половину экрана с быстрым выбором: ипотека, кредит,
+вклад, ОФЗ, а также облигации, недвижимость и инфляция.
 
 ```powershell
 adb install -r Finhell-release.apk
