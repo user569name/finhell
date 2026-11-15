@@ -7,6 +7,7 @@ import '../services/api_client.dart';
 import '../theme/sber_theme.dart';
 import '../widgets/ad_banner_slot.dart';
 import '../widgets/rewarded_ad_dialog.dart';
+import 'calculators_screen.dart';
 import 'results_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -32,6 +33,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  int _tab = 0;
+
   final _capital = TextEditingController(text: '500000');
   final _monthly = TextEditingController(text: '20000');
   final _goal = TextEditingController(text: '1500000');
@@ -233,9 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _loading = false);
       await _refreshTokens();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка расчёта: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Ошибка расчёта: $error')));
     }
   }
 
@@ -279,7 +281,8 @@ class _HomeScreenState extends State<HomeScreen> {
     controller.dispose();
     if (!mounted || value == null) return;
     final normalized = value.replaceAll(RegExp(r'/+$'), '');
-    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+    if (!normalized.startsWith('http://') &&
+        !normalized.startsWith('https://')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Адрес должен начинаться с http:// или https://'),
@@ -290,9 +293,8 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => widget.api.baseUrl = normalized);
     await widget.onBaseUrlChanged?.call(normalized);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Сервер: $normalized')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Сервер: $normalized')));
   }
 
   @override
@@ -319,11 +321,17 @@ class _HomeScreenState extends State<HomeScreen> {
               alignment: Alignment.center,
               child: const Text(
                 'Ф',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(width: 10),
-            const Text('ФинХелл', style: TextStyle(fontWeight: FontWeight.w800)),
+            const Text(
+              'ФинХелл',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
           ],
         ),
         actions: [
@@ -392,188 +400,271 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      body: IndexedStack(
+        index: _tab,
         children: [
-          _hero(theme),
-          const SizedBox(height: 16),
-          _tokenCard(theme),
-          const SizedBox(height: 14),
-          AdBannerSlot(
-            reward: _tokens?.adReward ?? 5,
-            onWatchAd: () => _openAdDialog(),
-          ),
-          const SizedBox(height: 18),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Ваши параметры', style: theme.textTheme.headlineSmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Макроданные подставятся автоматически. Любое значение можно переопределить на сервере.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  _section('Капитал и цель'),
-                  _moneyField(_capital, 'Текущий капитал'),
-                  const SizedBox(height: 12),
-                  Row(
+          ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+            children: [
+              _hero(theme),
+              const SizedBox(height: 16),
+              _tokenCard(theme),
+              const SizedBox(height: 14),
+              AdBannerSlot(
+                reward: _tokens?.adReward ?? 5,
+                onWatchAd: () => _openAdDialog(),
+              ),
+              const SizedBox(height: 18),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: _moneyField(_monthly, 'Взнос в месяц')),
-                      const SizedBox(width: 12),
-                      Expanded(child: _horizonField()),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _moneyField(_goal, 'Цель по капиталу'),
-                  const SizedBox(height: 18),
-                  _section('Риск и ликвидность'),
-                  Text('Риск-профиль', style: _label(theme)),
-                  const SizedBox(height: 8),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'conservative', label: Text('Консерв.')),
-                      ButtonSegment(value: 'moderate', label: Text('Умеренный')),
-                      ButtonSegment(value: 'aggressive', label: Text('Агрессив.')),
-                    ],
-                    selected: {_risk},
-                    onSelectionChanged: (value) => setState(() => _risk = value.first),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    value: _liquidity,
-                    decoration: const InputDecoration(labelText: 'Потребность в ликвидности'),
-                    items: const [
-                      DropdownMenuItem(value: 'high', child: Text('Высокая')),
-                      DropdownMenuItem(value: 'medium', child: Text('Средняя')),
-                      DropdownMenuItem(value: 'low', child: Text('Низкая')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setState(() => _liquidity = value);
-                    },
-                  ),
-                  const SizedBox(height: 6),
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text(
-                      'Готов использовать кредит',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: const Text(
-                      'Добавит ипотечные сценарии с плечом',
-                      style: TextStyle(fontSize: 11),
-                    ),
-                    value: _creditWillingness,
-                    onChanged: (value) {
-                      setState(() {
-                        _creditWillingness = value;
-                        if (value && _creditType == 'none') {
-                          _creditType = 'mortgage';
-                        }
-                      });
-                    },
-                  ),
-                  if (_creditWillingness) ...[
-                    const SizedBox(height: 4),
-                    DropdownButtonFormField<String>(
-                      value: _creditType,
-                      decoration: const InputDecoration(labelText: 'Тип кредита'),
-                      items: const [
-                        DropdownMenuItem(value: 'mortgage', child: Text('Ипотека')),
-                        DropdownMenuItem(
-                          value: 'consumer',
-                          child: Text('Потребительский'),
+                      Text(
+                        'Ваши параметры',
+                        style: theme.textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Макроданные подставятся автоматически. Любое значение можно переопределить на сервере.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _section('Капитал и цель'),
+                      _moneyField(_capital, 'Текущий капитал'),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _moneyField(_monthly, 'Взнос в месяц'),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(child: _horizonField()),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _moneyField(_goal, 'Цель по капиталу'),
+                      const SizedBox(height: 18),
+                      _section('Риск и ликвидность'),
+                      Text('Риск-профиль', style: _label(theme)),
+                      const SizedBox(height: 8),
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(
+                            value: 'conservative',
+                            label: Text('Консерв.'),
+                          ),
+                          ButtonSegment(
+                            value: 'moderate',
+                            label: Text('Умеренный'),
+                          ),
+                          ButtonSegment(
+                            value: 'aggressive',
+                            label: Text('Агрессив.'),
+                          ),
+                        ],
+                        selected: {_risk},
+                        onSelectionChanged: (value) =>
+                            setState(() => _risk = value.first),
+                      ),
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        value: _liquidity,
+                        decoration: const InputDecoration(
+                          labelText: 'Потребность в ликвидности',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'high',
+                            child: Text('Высокая'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'medium',
+                            child: Text('Средняя'),
+                          ),
+                          DropdownMenuItem(value: 'low', child: Text('Низкая')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) setState(() => _liquidity = value);
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Готов использовать кредит',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Добавит ипотечные сценарии с плечом',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                        value: _creditWillingness,
+                        onChanged: (value) {
+                          setState(() {
+                            _creditWillingness = value;
+                            if (value && _creditType == 'none') {
+                              _creditType = 'mortgage';
+                            }
+                          });
+                        },
+                      ),
+                      if (_creditWillingness) ...[
+                        const SizedBox(height: 4),
+                        DropdownButtonFormField<String>(
+                          value: _creditType,
+                          decoration: const InputDecoration(
+                            labelText: 'Тип кредита',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'mortgage',
+                              child: Text('Ипотека'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'consumer',
+                              child: Text('Потребительский'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null)
+                              setState(() => _creditType = value);
+                          },
                         ),
                       ],
-                      onChanged: (value) {
-                        if (value != null) setState(() => _creditType = value);
-                      },
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(child: _moneyField(_expenses, 'Расходы в месяц')),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _emergencyMonths,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Резерв, мес.'),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _moneyField(_expenses, 'Расходы в месяц'),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _emergencyMonths,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Резерв, мес.',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _section('Расчёт'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: _paths,
+                              decoration: const InputDecoration(
+                                labelText: 'Путей',
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 1000,
+                                  child: Text('1 000'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 5000,
+                                  child: Text('5 000'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 10000,
+                                  child: Text('10 000'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 20000,
+                                  child: Text('20 000'),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null)
+                                  setState(() => _paths = value);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: _scenarios,
+                              decoration: const InputDecoration(
+                                labelText: 'Сценариев',
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 10, child: Text('10')),
+                                DropdownMenuItem(value: 12, child: Text('12')),
+                                DropdownMenuItem(value: 18, child: Text('18')),
+                              ],
+                              onChanged: (value) {
+                                if (value != null)
+                                  setState(() => _scenarios = value);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      if (_loading) _progressCard(theme),
+                      _costRow(theme),
+                      const SizedBox(height: 10),
+                      FilledButton.icon(
+                        onPressed: _loading ? null : _run,
+                        icon: const Icon(Icons.arrow_forward),
+                        label: Text(_loading ? 'Считаем…' : 'Рассчитать план'),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Сервер: ${widget.api.baseUrl}',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 10,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '10 000 путей на сценарий. Это не индивидуальная инвестиционная рекомендация.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 18),
-                  _section('Расчёт'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          value: _paths,
-                          decoration: const InputDecoration(labelText: 'Путей'),
-                          items: const [
-                            DropdownMenuItem(value: 1000, child: Text('1 000')),
-                            DropdownMenuItem(value: 5000, child: Text('5 000')),
-                            DropdownMenuItem(value: 10000, child: Text('10 000')),
-                            DropdownMenuItem(value: 20000, child: Text('20 000')),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) setState(() => _paths = value);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          value: _scenarios,
-                          decoration: const InputDecoration(labelText: 'Сценариев'),
-                          items: const [
-                            DropdownMenuItem(value: 10, child: Text('10')),
-                            DropdownMenuItem(value: 12, child: Text('12')),
-                            DropdownMenuItem(value: 18, child: Text('18')),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) setState(() => _scenarios = value);
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  if (_loading) _progressCard(theme),
-                  _costRow(theme),
-                  const SizedBox(height: 10),
-                  FilledButton.icon(
-                    onPressed: _loading ? null : _run,
-                    icon: const Icon(Icons.arrow_forward),
-                    label: Text(_loading ? 'Считаем…' : 'Рассчитать план'),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Сервер: ${widget.api.baseUrl}',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 10,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '10 000 путей на сценарий. Это не индивидуальная инвестиционная рекомендация.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
+          ),
+          const CalculatorsScreen(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (value) {
+          FocusScope.of(context).unfocus();
+          setState(() => _tab = value);
+          if (value == 0) _refreshTokens();
+        },
+        backgroundColor: theme.colorScheme.surface,
+        indicatorColor: theme.colorScheme.primary.withOpacity(0.14),
+        height: 68,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights),
+            label: 'Оптимизатор',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calculate_outlined),
+            selectedIcon: Icon(Icons.calculate),
+            label: 'Калькуляторы',
           ),
         ],
       ),
@@ -725,8 +816,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
                   color: Colors.white10,
@@ -823,9 +916,9 @@ class _HomeScreenState extends State<HomeScreen> {
               balance == null
                   ? 'Стоимость расчёта — $cost ${_tokenWord(cost)}'
                   : enough
-                      ? 'Стоимость расчёта — $cost ${_tokenWord(cost)} · '
-                          'баланс $balance'
-                      : 'Не хватает токенов: нужно $cost, на балансе $balance',
+                  ? 'Стоимость расчёта — $cost ${_tokenWord(cost)} · '
+                        'баланс $balance'
+                  : 'Не хватает токенов: нужно $cost, на балансе $balance',
               style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: enough
@@ -980,10 +1073,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   TextStyle _label(ThemeData theme) => TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        color: theme.colorScheme.onSurfaceVariant,
-      );
+    fontSize: 12,
+    fontWeight: FontWeight.w700,
+    color: theme.colorScheme.onSurfaceVariant,
+  );
 
   Widget _moneyField(TextEditingController controller, String label) {
     return TextFormField(
