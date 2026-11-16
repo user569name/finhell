@@ -120,6 +120,14 @@ h1, h2, h3, h4, p { margin: 0; }
   transition: background .18s ease, color .18s ease;
 }
 .nav-link:hover { background: var(--surface-2); color: var(--text); }
+.nav-link-calc {
+  background: var(--green-soft);
+  color: var(--green-dark);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 18%, transparent);
+}
+.nav-link-calc:hover { background: var(--green-soft-2); color: var(--green-dark); }
+html[data-theme="dark"] .nav-link-calc,
+html[data-theme="dark"] .nav-link-calc:hover { color: var(--green-2); }
 .icon-btn {
   display: grid; place-items: center;
   width: 40px; height: 40px;

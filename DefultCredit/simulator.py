@@ -262,6 +262,18 @@ if STATIC_DIR.exists():
 app.include_router(optimizer_router)
 
 
+@app.get("/calculators", response_class=HTMLResponse, include_in_schema=False)
+def calculators_page() -> HTMLResponse:
+    template = Path(__file__).resolve().parent / "templates" / "calculators.html"
+    if not template.exists():
+        return HTMLResponse(
+            "<h1>Шаблон калькуляторов не найден</h1>"
+            "<p>Откройте <a href='/docs'>/docs</a> для работы через API.</p>",
+            status_code=500,
+        )
+    return HTMLResponse(template.read_text(encoding="utf-8"))
+
+
 @app.get("/optimizer", response_class=HTMLResponse, include_in_schema=False)
 def optimizer_page() -> HTMLResponse:
     template = Path(__file__).resolve().parent / "templates" / "optimizer.html"
